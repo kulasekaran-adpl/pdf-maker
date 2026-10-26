@@ -156,6 +156,17 @@
     overflow:hidden;
     text-overflow:ellipsis;
   }
+  .page-card-head .pages-pill{
+    font-size:10.5px;
+    font-weight:700;
+    color:var(--blue);
+    background:#EAF5FC;
+    border:1px solid #C8E3F6;
+    padding:1px 7px;
+    border-radius:12px;
+    white-space:nowrap;
+  }
+  .page-card-head .pages-pill.hidden{ display:none; }
   .page-card-head .chev{ color:var(--muted); font-size:12px; transition:transform .15s; }
   .page-card-head.collapsed .chev{ transform:rotate(-90deg); }
   .page-card-body{ padding:14px; }
@@ -254,15 +265,22 @@
 
   /* content page */
   .sheet.content{ padding-top:30px; }
-  .cp-top{ display:flex; justify-content:space-between; align-items:flex-start; }
+  .sheet.content.text-sheet{ padding:28px 45px 22px; }
+  .sheet.content.text-sheet.is-cont .cp-rule{ margin:7px 0 13px; }
+  .cp-top{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
   .cp-eyebrow{
     color:var(--blue); font-weight:800; font-size:11px; letter-spacing:.05em; text-transform:uppercase;
+    min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
-  .cp-step{ font-size:10px; color:var(--muted); font-weight:600; white-space:nowrap; }
+  .cp-eyebrow .cont-sec{
+    color:var(--muted); font-weight:700; text-transform:none; letter-spacing:0; font-size:10.5px;
+  }
+  .cp-step{ font-size:10px; color:var(--muted); font-weight:600; white-space:nowrap; flex-shrink:0; }
   .cp-title{
     font-size:19px; font-weight:800; color:var(--ink); margin:6px 0 12px; line-height:1.25;
   }
   .cp-rule{ border:none; border-top:1px solid var(--line); margin:0 0 18px; }
+  .sheet.content.text-sheet .cp-rule{ margin:0 0 14px; }
   .cp-imgbox{
     border:1px solid #E1E5EA;
     border-radius:6px;
@@ -284,7 +302,17 @@
     font-size:11.5px; color:var(--muted); margin-top:12px; line-height:1.5;
   }
   .cp-body{
-    flex:1; overflow:hidden;
+    flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column;
+  }
+  .cp-body svg.md-svg{
+    width:100%; height:100%; display:block; user-select:text; -webkit-user-select:text;
+  }
+  .cp-body svg.md-svg a{ cursor:pointer; }
+  .cp-body svg.md-svg a:hover text{ opacity:0.75; }
+  .cp-body-empty{
+    flex:1; display:flex; align-items:center; justify-content:center;
+    color:#B7BFC8; font-size:12px; font-weight:600;
+    border:1px dashed #E1E5EA; border-radius:6px;
   }
 
   .sheet-footer{
@@ -292,11 +320,13 @@
     padding-top:10px;
     border-top:1px solid var(--line);
     display:flex; align-items:center; justify-content:space-between;
+    gap:10px;
   }
-  .sf-left{ display:flex; align-items:center; gap:6px; }
-  .sf-left img{ width:14px; height:14px; }
-  .sf-left span{ font-size:9.5px; font-weight:700; color:var(--ink); }
-  .sf-right{ font-size:9.5px; color:var(--muted); font-weight:600; }
+  .sheet.content.text-sheet .sheet-footer{ margin-top:12px; }
+  .sf-left{ display:flex; align-items:center; gap:6px; min-width:0; flex:1; }
+  .sf-left img{ width:14px; height:14px; flex-shrink:0; }
+  .sf-left span{ font-size:9.5px; font-weight:700; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sf-right{ font-size:9.5px; color:var(--muted); font-weight:600; white-space:nowrap; flex-shrink:0; }
 
   .empty-state{
     text-align:center; color:var(--muted); font-size:13px; padding:60px 20px;
@@ -424,7 +454,7 @@
 
     <div class="generate-bar">
       <button class="gen-btn" id="generateBtn">⬇ Generate &amp; Download PDF</button>
-      <div class="gen-note">US Letter · portrait · matches the AD-EC template</div>
+      <div class="gen-note">US Letter · auto-paginates long Markdown · matches AD-EC template</div>
     </div>
   </div>
 
@@ -520,12 +550,14 @@
 
       const head = document.createElement('div');
       head.className = 'page-card-head' + (p.collapsed ? ' collapsed' : '');
+      head.dataset.pageId = p.id;
       head.innerHTML = `
         <span class="badge ${p.type === 'text' ? 'text' : ''}">${p.type === 'text' ? 'TEXT' : 'SHOT'}</span>
         <span class="ptitle">${idx+2}. ${escapeHtml(p.title || 'Untitled page')}</span>
+        <span class="pages-pill hidden"></span>
         <span class="chev">▾</span>
       `;
-      head.addEventListener('click', ()=>{ p.collapsed = !p.collapsed; renderForm(); });
+      head.addEventListener('click', ()=>{ p.collapsed = !p.collapsed; renderForm(); updateFormPageLabels(); });
 
       const body = document.createElement('div');
       body.className = 'page-card-body' + (p.collapsed ? ' hidden' : '');
@@ -555,7 +587,7 @@
       body.appendChild(orientWrap);
 
       const eyebrowInput = fieldRow('Eyebrow label', p.eyebrow, (v)=>{ p.eyebrow=v; renderPreview(); }, 'e.g. STOREFRONT or CHECKOUT - STEP 2');
-      const titleInput = fieldRow('Page title', p.title, (v)=>{ p.title=v; head.querySelector('.ptitle').textContent = (idx+2)+'. '+(v||'Untitled page'); renderPreview(); }, 'e.g. Homepage & Featured Products');
+      const titleInput = fieldRow('Page title', p.title, (v)=>{ p.title=v; renderPreview(); }, 'e.g. Homepage & Featured Products');
       body.appendChild(eyebrowInput);
       body.appendChild(titleInput);
 
@@ -616,11 +648,11 @@
         const captionInput = fieldRow('Caption', p.caption, (v)=>{ p.caption=v; renderPreview(); }, 'One-line description shown under the screenshot', true);
         body.appendChild(captionInput);
       } else {
-        const bodyInput = fieldRow('Body text (Markdown supported)', p.body, (v)=>{ p.body=v; renderPreview(); }, 'Paste or write markdown: **bold**, *italic*, ## headings, - lists, > quotes, `code`', true, 150);
+        const bodyInput = fieldRow('Body text (Markdown supported — auto-paginates long content)', p.body, (v)=>{ p.body=v; scheduleRenderPreview(); }, 'Paste or write markdown: ## headings, **bold**, *italic*, - lists, | tables |, > quotes, `code`', true, 170);
         body.appendChild(bodyInput);
         const hint = document.createElement('div');
         hint.className = 'md-hint';
-        hint.innerHTML = 'Supports <code>## headings</code>, <code>**bold**</code>, <code>*italic*</code>, <code>- lists</code>, <code>1. lists</code>, <code>&gt; quotes</code>, <code>`code`</code> and code fences.';
+        hint.innerHTML = 'Supports <code>#–#### headings</code>, <code>**bold**</code>, <code>*italic*</code>, <code>~~strike~~</code>, <code>[links](url)</code>, nested <code>- / 1. / [x]</code> lists, <code>| tables |</code>, <code>&gt; quotes</code>, <code>`code`</code> &amp; code fences. Long content automatically flows onto new pages (use <code>\\pagebreak</code> to force a break).';
         body.appendChild(hint);
       }
 
@@ -680,263 +712,1939 @@
     pages.push(p); renderForm(); renderPreview();
   });
 
-  // ---------- preview rendering ----------
-  function stepLabelFor(p, idx){
-    if (!p.showStep) return '';
-    return (p.stepLabel && p.stepLabel.trim()) ? p.stepLabel.trim() : `Step ${idx+1} of ${pages.length}`;
-  }
-
-  function renderPreview(){
-    previewWrap.innerHTML = '';
-    const total = pages.length + 1;
-    pageCountLabel.textContent = total + (total===1 ? ' page' : ' pages');
-
-    const coverEl = document.createElement('div');
-    coverEl.innerHTML = `<div class="sheet-label">Cover — ${coverOrientation} — Page 1 of ${total}</div>`;
-    const sheet = document.createElement('div');
-    sheet.className = 'sheet cover' + (coverOrientation === 'landscape' ? ' landscape' : '');
-    sheet.style.position = 'relative';
-    const tags = docTagsEl.value.trim();
-    const maturity = docMaturityEl.value.trim();
-    sheet.innerHTML = `
-      <div class="doccode">${escapeHtml(docCodeEl.value || 'AD-EC-000')}</div>
-      <div class="ctitle">${escapeHtml(docTitleEl.value || 'Untitled Deck')}</div>
-      <div class="csub">${escapeHtml(docSubtitleEl.value || '')}</div>
-      ${tags ? `<div class="ctags">${escapeHtml(tags)}</div>` : ''}
-      ${maturity ? `<div class="cmaturity">${escapeHtml(maturity)}</div>` : ''}
-      <div class="sheet-footer" style="position:absolute; left:32px; right:32px; bottom:26px;">
-        <div class="sf-left"><img src="${LOGO_DATA_URL}"/><span>${escapeHtml(docCodeEl.value||'')} | ${escapeHtml(docTitleEl.value||'')}</span></div>
-        <div class="sf-right">Page 1 of ${total}</div>
-      </div>
-    `;
-    coverEl.appendChild(sheet);
-    previewWrap.appendChild(coverEl);
-
-    pages.forEach((p, idx)=>{
-      const pageNum = idx + 2;
-      const wrap = document.createElement('div');
-      wrap.innerHTML = `<div class="sheet-label">${p.type==='text'?'Text page':'Screenshot page'} — ${p.orientation} — Page ${pageNum} of ${total}</div>`;
-      const s = document.createElement('div');
-      s.className = 'sheet content' + (p.orientation === 'landscape' ? ' landscape' : '');
-
-      let middleHtml = '';
-      if (p.type === 'screenshot'){
-        middleHtml = `
-          <div class="cp-imgbox ${p.imgData ? '' : 'empty'}">
-            ${p.imgData ? `<img src="${p.imgData}"/>` : 'No screenshot uploaded yet'}
-          </div>
-          <div class="cp-caption">${escapeHtml(p.caption||'')}</div>
-        `;
-      } else {
-        let mdHtml = '';
-        try{ mdHtml = window.marked ? window.marked.parse(p.body||'') : escapeHtml(p.body||''); }
-        catch(e){ mdHtml = escapeHtml(p.body||''); }
-        middleHtml = `<div class="cp-body md">${mdHtml}</div>`;
-      }
-
-      const step = stepLabelFor(p, idx);
-
-      s.innerHTML = `
-        <div class="cp-top">
-          <div class="cp-eyebrow">${escapeHtml(p.eyebrow||'')}</div>
-          ${step ? `<div class="cp-step">${escapeHtml(step)}</div>` : ''}
-        </div>
-        <div class="cp-title">${escapeHtml(p.title||'')}</div>
-        <hr class="cp-rule"/>
-        ${middleHtml}
-        <div class="sheet-footer">
-          <div class="sf-left"><img src="${LOGO_DATA_URL}"/><span>${escapeHtml(docCodeEl.value||'')} | ${escapeHtml(docTitleEl.value||'')}</span></div>
-          <div class="sf-right">Page ${pageNum} of ${total}</div>
-        </div>
-      `;
-      wrap.appendChild(s);
-      previewWrap.appendChild(wrap);
-    });
-  }
-
-  // ================= Markdown -> PDF renderer =================
-  function mdParseBlocks(md){
-    const lines = (md||'').replace(/\r\n/g,'\n').split('\n');
-    const blocks = [];
-    let i=0;
-    while(i<lines.length){
-      let line = lines[i];
-      if(/^\s*$/.test(line)){ i++; continue; }
-      if(/^```/.test(line)){
-        let codeLines=[]; i++;
-        while(i<lines.length && !/^```/.test(lines[i])){ codeLines.push(lines[i]); i++; }
-        i++;
-        blocks.push({type:'code', text: codeLines.join('\n')});
-        continue;
-      }
-      let h = line.match(/^(#{1,6})\s+(.*)$/);
-      if(h){ blocks.push({type:'h', level:h[1].length, text:h[2]}); i++; continue; }
-      let hr = line.match(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/);
-      if(hr){ blocks.push({type:'hr'}); i++; continue; }
-      let bq = line.match(/^>\s?(.*)$/);
-      if(bq){
-        let qlines=[bq[1]]; i++;
-        while(i<lines.length && /^>\s?/.test(lines[i])){ qlines.push(lines[i].replace(/^>\s?/,'')); i++; }
-        blocks.push({type:'quote', text:qlines.join(' ')});
-        continue;
-      }
-      let ol0 = line.match(/^\s*\d+\.\s+(.*)$/);
-      let ul0 = line.match(/^\s*[-*+]\s+(.*)$/);
-      if(ol0 || ul0){
-        const ordered = !!ol0;
-        let items=[];
-        while(i<lines.length){
-          let l = lines[i];
-          let om = l.match(/^\s*\d+\.\s+(.*)$/);
-          let um = l.match(/^\s*[-*+]\s+(.*)$/);
-          if(ordered && om){ items.push(om[1]); i++; }
-          else if(!ordered && um){ items.push(um[1]); i++; }
-          else break;
-        }
-        blocks.push({type: ordered ? 'ol':'ul', items});
-        continue;
-      }
-      let paraLines=[line]; i++;
-      while(i<lines.length && !/^\s*$/.test(lines[i]) && !/^```/.test(lines[i]) &&
-            !/^#{1,6}\s+/.test(lines[i]) && !/^>\s?/.test(lines[i]) &&
-            !/^\s*[-*+]\s+/.test(lines[i]) && !/^\s*\d+\.\s+/.test(lines[i]) &&
-            !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[i])){
-        paraLines.push(lines[i]); i++;
-      }
-      blocks.push({type:'p', text: paraLines.join(' ')});
-    }
-    return blocks;
-  }
-
-  function mdInline(text){
-    let runs=[];
-    const regex = /(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(__(.+?)__)|(\*(.+?)\*)|(_(.+?)_)|(`(.+?)`)/g;
-    let last=0, m;
-    while((m = regex.exec(text))){
-      if(m.index>last) runs.push({text:text.slice(last,m.index)});
-      if(m[2]!==undefined) runs.push({text:m[2], bold:true, italic:true});
-      else if(m[4]!==undefined) runs.push({text:m[4], bold:true});
-      else if(m[6]!==undefined) runs.push({text:m[6], bold:true});
-      else if(m[8]!==undefined) runs.push({text:m[8], italic:true});
-      else if(m[10]!==undefined) runs.push({text:m[10], italic:true});
-      else if(m[12]!==undefined) runs.push({text:m[12], code:true});
-      last = regex.lastIndex;
-    }
-    if(last<text.length) runs.push({text:text.slice(last)});
-    return runs.filter(r=>r.text.length>0);
-  }
-
-  function drawRuns(doc, runs, x0, y, maxWidth, lineHeight, baseSize, color){
-    let x = x0;
-    runs.forEach(run=>{
-      const tokens = run.text.split(/(\s+)/);
-      tokens.forEach(tok=>{
-        if(tok==='') return;
-        const isSpace = /^\s+$/.test(tok);
-        if(run.code){ doc.setFont('courier', run.bold?'bold':'normal'); }
-        else { doc.setFont('helvetica', run.bold && run.italic ? 'bolditalic' : run.bold ? 'bold' : run.italic ? 'italic' : 'normal'); }
-        doc.setFontSize(baseSize);
-        doc.setTextColor(...(run.code ? [180,50,90] : color));
-        const wWidth = doc.getTextWidth(tok);
-        if(!isSpace && x + wWidth > x0 + maxWidth && x > x0){
-          x = x0; y += lineHeight;
-        }
-        if(!(isSpace && x===x0)){
-          doc.text(tok, x, y);
-          x += wWidth;
-        }
-      });
-    });
-    return { x, y: y + lineHeight };
-  }
-
-  function renderMarkdownPDF(doc, markdown, x0, yStart, maxWidth, bottomLimit, colors){
-    const baseSize = 10.2, lineHeight = 5.1;
-    let y = yStart;
-    const blocks = mdParseBlocks(markdown);
-    for(const b of blocks){
-      if(y > bottomLimit) break;
-      if(b.type==='h'){
-        const size = b.level===1?15: b.level===2?13: 11.3;
-        doc.setFont('helvetica','bold');
-        doc.setFontSize(size);
-        doc.setTextColor(...colors.ink);
-        const lines = doc.splitTextToSize(b.text, maxWidth);
-        lines.forEach(l=>{ if(y>bottomLimit) return; doc.text(l, x0, y); y += size*0.42+2.2; });
-        y += 1.5;
-      } else if(b.type==='p'){
-        const runs = mdInline(b.text);
-        const res = drawRuns(doc, runs, x0, y, maxWidth, lineHeight, baseSize, colors.body);
-        y = res.y + 2;
-      } else if(b.type==='ul' || b.type==='ol'){
-        b.items.forEach((item, idx2)=>{
-          if(y>bottomLimit) return;
-          const bullet = b.type==='ul' ? '•' : (idx2+1)+'.';
-          doc.setFont('helvetica','bold');
-          doc.setFontSize(baseSize);
-          doc.setTextColor(...colors.blue);
-          doc.text(bullet, x0, y);
-          const indent = 6;
-          const runs = mdInline(item);
-          const res = drawRuns(doc, runs, x0+indent, y, maxWidth-indent, lineHeight, baseSize, colors.body);
-          y = res.y;
-        });
-        y += 1.5;
-      } else if(b.type==='quote'){
-        const startY = y - 3.6;
-        const runs = mdInline(b.text);
-        doc.setTextColor(...colors.muted);
-        const res = drawRuns(doc, runs.map(r=>({...r, italic:true})), x0+5, y, maxWidth-5, lineHeight, baseSize, colors.muted);
-        doc.setDrawColor(...colors.blue);
-        doc.setLineWidth(0.8);
-        doc.line(x0, startY, x0, res.y - lineHeight + 2.5);
-        y = res.y + 1.5;
-      } else if(b.type==='code'){
-        const codeLines = b.text.split('\n');
-        const boxH = codeLines.length*4.4 + 5;
-        doc.setFillColor(247,249,251);
-        doc.setDrawColor(...colors.box);
-        doc.roundedRect(x0, y-4, maxWidth, boxH, 1.5, 1.5, 'FD');
-        doc.setFont('courier','normal');
-        doc.setFontSize(8.6);
-        doc.setTextColor(50,54,62);
-        let cy = y+1;
-        codeLines.forEach(cl=>{
-          if(cy>bottomLimit+4) return;
-          doc.text(cl, x0+3, cy);
-          cy += 4.4;
-        });
-        y = y - 4 + boxH + 4;
-      } else if(b.type==='hr'){
-        doc.setDrawColor(...colors.line);
-        doc.setLineWidth(0.3);
-        doc.line(x0, y, x0+maxWidth, y);
-        y += 5;
-      }
-    }
-    return y;
-  }
-
-  // ---------- PDF generation ----------
+  // ---------- colors & constants ----------
   const BLUE = [9,125,194];
   const INK = [18,32,46];
   const MUTED = [91,100,114];
   const LINE = [221,227,233];
   const BOX_BORDER = [225,229,234];
   const BODY_COLOR = [43,57,71];
+  const CODE_BG = [247,249,251];
+  const CODE_INK = [30,41,59];
+  const PILL_BG = [241,244,247];
+  const PILL_BORDER = [226,232,240];
+  const QUOTE_BG = [248,251,254];
+  const TABLE_HEAD_BG = [241,245,249];
+  const TABLE_ALT_BG = [250,251,253];
+  const TABLE_HEAD_BORDER = [203,213,225];
+  const H1_RULE = [230,236,242];
+  const WHITE = [255,255,255];
 
+  const PT_TO_MM = 25.4 / 72;
+  const MARGIN_X = 19;
+
+  function rgbCss(c){ return `rgb(${c[0]},${c[1]},${c[2]})`; }
   function pageSize(orientation){
     return orientation === 'landscape' ? { w:279.4, h:215.9 } : { w:215.9, h:279.4 };
   }
 
+  let rafPending = false;
+  function scheduleRenderPreview(){
+    if (rafPending) return;
+    if (typeof requestAnimationFrame === 'function'){
+      rafPending = true;
+      requestAnimationFrame(()=>{ rafPending = false; renderPreview(); });
+    } else {
+      renderPreview();
+    }
+  }
+
+  // ---------- measurement doc ----------
+  let _measureDoc = null;
+  function getMeasureDoc(){
+    if (_measureDoc) return _measureDoc;
+    if (window.jspdf && window.jspdf.jsPDF){
+      _measureDoc = new window.jspdf.jsPDF({ unit:'mm', format:'letter', orientation:'portrait' });
+      return _measureDoc;
+    }
+    // Lightweight metric fallback if jsPDF CDN hasn't loaded yet
+    let curFont = 'helvetica', curStyle = 'normal', curSize = 10;
+    return {
+      setFont(f, s){ curFont = f || 'helvetica'; curStyle = s || 'normal'; },
+      setFontSize(sz){ curSize = sz || 10; },
+      getTextWidth(str){
+        const em = curSize * PT_TO_MM;
+        if (curFont === 'courier') return (str || '').length * em * 0.60;
+        let w = 0;
+        const boldFactor = (curStyle === 'bold' || curStyle === 'bolditalic') ? 1.06 : 1.0;
+        for (let i = 0; i < (str || '').length; i++){
+          const ch = str[i];
+          if ('il.,:;|!`\'" '.indexOf(ch) >= 0) w += 0.28;
+          else if ('fjrt()[]{}'.indexOf(ch) >= 0) w += 0.35;
+          else if ('mwMW@%&'.indexOf(ch) >= 0) w += 0.82;
+          else if (ch >= 'A' && ch <= 'Z') w += 0.67;
+          else w += 0.53;
+        }
+        return w * em * boldFactor;
+      },
+      splitTextToSize(text, maxW){
+        const words = String(text || '').split(/\s+/);
+        const lines = [];
+        let cur = '';
+        for (const wd of words){
+          const cand = cur ? cur + ' ' + wd : wd;
+          if (cur && this.getTextWidth(cand) > maxW){ lines.push(cur); cur = wd; }
+          else cur = cand;
+        }
+        if (cur || lines.length === 0) lines.push(cur);
+        return lines;
+      }
+    };
+  }
+
+  // ---------- HTML entities & Unicode handling ----------
+  const NAMED_ENTITIES = {
+    amp:'&', lt:'<', gt:'>', quot:'"', apos:"'", nbsp:' ',
+    ndash:'\u2013', mdash:'\u2014', hellip:'\u2026', bull:'\u2022',
+    lsquo:'\u2018', rsquo:'\u2019', ldquo:'\u201C', rdquo:'\u201D',
+    copy:'\u00A9', reg:'\u00AE', trade:'\u2122', deg:'\u00B0',
+    plusmn:'\u00B1', times:'\u00D7', divide:'\u00F7',
+    rarr:'\u2192', larr:'\u2190', harr:'\u2194', uarr:'\u2191', darr:'\u2193',
+    rArr:'\u21D2', lArr:'\u21D0', hArr:'\u21D4',
+    le:'\u2264', ge:'\u2265', ne:'\u2260', asymp:'\u2248',
+    check:'\u2713', cross:'\u2717'
+  };
+
+  function decodeEntities(s){
+    if (!s) return '';
+    return String(s).replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (m, code)=>{
+      if (code[0] === '#'){
+        const cp = (code[1] === 'x' || code[1] === 'X')
+          ? parseInt(code.slice(2), 16)
+          : parseInt(code.slice(1), 10);
+        if (!isNaN(cp) && cp > 0 && cp <= 0x10FFFF){
+          try{ return String.fromCodePoint(cp); }catch(e){ return m; }
+        }
+        return m;
+      }
+      return Object.prototype.hasOwnProperty.call(NAMED_ENTITIES, code) ? NAMED_ENTITIES[code] : m;
+    });
+  }
+
+  function cleanControlChars(s){
+    if (!s) return '';
+    return String(s)
+      .replace(/[\u00A0\u2007\u2009\u202F]/g, ' ')
+      .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '')
+      .replace(/[\u2010\u2011\u2012\u2212]/g, '-');
+  }
+
+  // Exact Windows-1252 codepoints supported natively by jsPDF standard Helvetica/Courier
+  const WIN1252_EXTRA = new Set([
+    0x20AC,0x201A,0x0192,0x201E,0x2026,0x2020,0x2021,0x02C6,0x2030,0x0160,
+    0x2039,0x0152,0x017D,0x2018,0x2019,0x201C,0x201D,0x2022,0x2013,0x2014,
+    0x02DC,0x2122,0x0161,0x203A,0x0153,0x017E,0x0178
+  ]);
+
+  function isWinAnsiCp(cp){
+    if (cp >= 0x20 && cp <= 0x7E) return true;
+    if (cp >= 0xA1 && cp <= 0xFF && cp !== 0xAD) return true;
+    return WIN1252_EXTRA.has(cp);
+  }
+
+  function segmentByWinAnsi(str){
+    const cleaned = cleanControlChars(str);
+    if (!cleaned) return [];
+    const chars = Array.from(cleaned);
+    const out = [];
+    let cur = '', curSafe = null;
+    for (let i = 0; i < chars.length; i++){
+      const ch = chars[i];
+      const cp = ch.codePointAt(0);
+      // Keep variation selectors attached to preceding non-WinAnsi symbol/emoji
+      if (cp === 0xFE0F || cp === 0xFE0E){
+        if (curSafe === false) cur += ch;
+        continue;
+      }
+      const safe = isWinAnsiCp(cp);
+      if (curSafe === null){ cur = ch; curSafe = safe; }
+      else if (safe === curSafe){ cur += ch; }
+      else { out.push({ text: cur, safe: curSafe }); cur = ch; curSafe = safe; }
+    }
+    if (cur) out.push({ text: cur, safe: curSafe });
+    return out;
+  }
+
+  const ASCII_FALLBACK_MAP = {
+    '\u2192':'->', '\u2794':'->', '\u279C':'->', '\u27A1':'->', '\u21D2':'=>', '\u27F6':'-->',
+    '\u2190':'<-', '\u21D0':'<=', '\u27F5':'<--', '\u2194':'<->', '\u21D4':'<=>',
+    '\u2191':'^', '\u2193':'v',
+    '\u2713':'[v]', '\u2714':'[v]', '\u2705':'[v]', '\u2611':'[x]',
+    '\u2717':'[x]', '\u2718':'[x]', '\u274C':'[x]', '\u2610':'[ ]',
+    '\u2264':'<=', '\u2265':'>=', '\u2260':'!=', '\u2248':'~=', '\u221E':'inf',
+    '\u25E6':'o', '\u25AA':'*', '\u25AB':'*', '\u25B8':'>', '\u25B6':'>', '\u25CF':'*',
+    '\u26A0':'[!]', '\u2139':'(i)', '\u2605':'*', '\u2606':'*'
+  };
+
+  function toWinAnsiFallback(str){
+    const chars = Array.from(cleanControlChars(str));
+    let res = '';
+    for (const ch of chars){
+      const cp = ch.codePointAt(0);
+      if (cp === 0xFE0F || cp === 0xFE0E) continue;
+      if (isWinAnsiCp(cp)) res += ch;
+      else if (ASCII_FALLBACK_MAP[ch]) res += ASCII_FALLBACK_MAP[ch];
+      else res += '?';
+    }
+    return res;
+  }
+
+  const VECTOR_SYMBOL_SET = new Set([
+    '\u2192','\u2794','\u279C','\u27A1','\u21D2',
+    '\u2190','\u21D0','\u2194','\u2191','\u2193',
+    '\u2713','\u2714','\u2705','\u2717','\u2718','\u274C',
+    '\u2264','\u2265','\u2260',
+    '\u25BC','\u25BE','\u25B2','\u25B4','\u25BA','\u25B8','\u25B6','\u25C4','\u25C2','\u25C0'
+  ]);
+
+  function vectorSymbolAdvance(ch, sizePt, font){
+    const em = sizePt * PT_TO_MM;
+    if (font === 'courier') return em * 0.60;
+    if (ch === '\u2194' || ch === '\u21D2' || ch === '\u21D0') return em * 0.92;
+    if (ch === '\u2705' || ch === '\u274C') return em * 0.92;
+    if (ch === '\u2191' || ch === '\u2193') return em * 0.58;
+    return em * 0.78;
+  }
+
+  function drawVectorSymbolPdf(doc, ch, x, baselineY, sizePt, color, font){
+    const em = sizePt * PT_TO_MM;
+    const adv = vectorSymbolAdvance(ch, sizePt, font);
+    const cy = baselineY - em * 0.33;
+    const cx = x + adv / 2;
+    const lw = Math.max(0.24, em * 0.085);
+
+    doc.setDrawColor(...color);
+    doc.setFillColor(...color);
+    doc.setLineWidth(lw);
+
+    if (ch === '\u2192' || ch === '\u2794' || ch === '\u279C' || ch === '\u27A1'){
+      const x1 = x + adv * 0.10, x2 = x + adv * 0.88, hw = em * 0.19;
+      doc.line(x1, cy, x2, cy);
+      doc.line(x2 - hw, cy - hw * 0.85, x2, cy);
+      doc.line(x2 - hw, cy + hw * 0.85, x2, cy);
+    } else if (ch === '\u21D2'){
+      const x1 = x + adv * 0.10, x2 = x + adv * 0.88, hw = em * 0.21, gap = em * 0.08;
+      doc.line(x1, cy - gap, x2 - hw * 0.45, cy - gap);
+      doc.line(x1, cy + gap, x2 - hw * 0.45, cy + gap);
+      doc.line(x2 - hw, cy - hw * 0.9, x2, cy);
+      doc.line(x2 - hw, cy + hw * 0.9, x2, cy);
+    } else if (ch === '\u2190' || ch === '\u21D0'){
+      const x1 = x + adv * 0.12, x2 = x + adv * 0.90, hw = em * 0.19;
+      doc.line(x1, cy, x2, cy);
+      doc.line(x1 + hw, cy - hw * 0.85, x1, cy);
+      doc.line(x1 + hw, cy + hw * 0.85, x1, cy);
+    } else if (ch === '\u2194'){
+      const x1 = x + adv * 0.10, x2 = x + adv * 0.90, hw = em * 0.17;
+      doc.line(x1, cy, x2, cy);
+      doc.line(x1 + hw, cy - hw * 0.85, x1, cy);
+      doc.line(x1 + hw, cy + hw * 0.85, x1, cy);
+      doc.line(x2 - hw, cy - hw * 0.85, x2, cy);
+      doc.line(x2 - hw, cy + hw * 0.85, x2, cy);
+    } else if (ch === '\u2191'){
+      const y1 = cy - em * 0.34, y2 = cy + em * 0.34, hw = em * 0.17;
+      doc.line(cx, y1, cx, y2);
+      doc.line(cx - hw, y1 + hw, cx, y1);
+      doc.line(cx + hw, y1 + hw, cx, y1);
+    } else if (ch === '\u2193'){
+      const y1 = cy - em * 0.34, y2 = cy + em * 0.34, hw = em * 0.17;
+      doc.line(cx, y1, cx, y2);
+      doc.line(cx - hw, y2 - hw, cx, y2);
+      doc.line(cx + hw, y2 - hw, cx, y2);
+    } else if (ch === '\u2713' || ch === '\u2714'){
+      const ckColor = (color === BODY_COLOR) ? [22, 163, 74] : color;
+      doc.setDrawColor(...ckColor);
+      doc.setLineWidth(lw * 1.15);
+      doc.line(x + adv * 0.15, cy + em * 0.02, x + adv * 0.38, cy + em * 0.25);
+      doc.line(x + adv * 0.38, cy + em * 0.25, x + adv * 0.84, cy - em * 0.26);
+    } else if (ch === '\u2705'){
+      const bs = em * 0.76;
+      const bx = cx - bs / 2, by = cy - bs / 2;
+      doc.setFillColor(22, 163, 74);
+      doc.roundedRect(bx, by, bs, bs, bs * 0.18, bs * 0.18, 'F');
+      doc.setDrawColor(255, 255, 255);
+      doc.setLineWidth(Math.max(0.28, em * 0.095));
+      doc.line(bx + bs * 0.22, by + bs * 0.53, bx + bs * 0.43, by + bs * 0.74);
+      doc.line(bx + bs * 0.43, by + bs * 0.74, bx + bs * 0.80, by + bs * 0.27);
+    } else if (ch === '\u2717' || ch === '\u2718' || ch === '\u274C'){
+      const xColor = (ch === '\u274C') ? [220, 38, 38] : color;
+      doc.setDrawColor(...xColor);
+      const r = em * 0.24;
+      doc.line(cx - r, cy - r, cx + r, cy + r);
+      doc.line(cx - r, cy + r, cx + r, cy - r);
+    } else if (ch === '\u2264' || ch === '\u2265'){
+      const w2 = em * 0.24, h2 = em * 0.17, uy = cy - em * 0.06;
+      if (ch === '\u2264'){
+        doc.line(cx + w2, uy - h2, cx - w2, uy);
+        doc.line(cx - w2, uy, cx + w2, uy + h2);
+      } else {
+        doc.line(cx - w2, uy - h2, cx + w2, uy);
+        doc.line(cx + w2, uy, cx - w2, uy + h2);
+      }
+      doc.line(cx - w2, cy + em * 0.22, cx + w2, cy + em * 0.22);
+    } else if (ch === '\u2260'){
+      const w2 = em * 0.24, g = em * 0.09;
+      doc.line(cx - w2, cy - g, cx + w2, cy - g);
+      doc.line(cx - w2, cy + g, cx + w2, cy + g);
+      doc.line(cx - w2 * 0.65, cy + em * 0.24, cx + w2 * 0.65, cy - em * 0.24);
+    } else if (ch === '\u25BC' || ch === '\u25BE'){
+      const r = em * 0.22;
+      doc.triangle(cx - r, cy - r * 0.7, cx + r, cy - r * 0.7, cx, cy + r * 0.9, 'F');
+    } else if (ch === '\u25B2' || ch === '\u25B4'){
+      const r = em * 0.22;
+      doc.triangle(cx - r, cy + r * 0.7, cx + r, cy + r * 0.7, cx, cy - r * 0.9, 'F');
+    } else if (ch === '\u25BA' || ch === '\u25B8' || ch === '\u25B6'){
+      const r = em * 0.22;
+      doc.triangle(cx - r * 0.7, cy - r, cx - r * 0.7, cy + r, cx + r * 0.9, cy, 'F');
+    } else if (ch === '\u25C4' || ch === '\u25C2' || ch === '\u25C0'){
+      const r = em * 0.22;
+      doc.triangle(cx + r * 0.7, cy - r, cx + r * 0.7, cy + r, cx - r * 0.9, cy, 'F');
+    }
+    return adv;
+  }
+
+  // High-DPI canvas sprite cache for arbitrary non-WinAnsi Unicode (emojis, Indic/CJK scripts, etc.)
+  const _glyphSpriteCache = new Map();
+  let _spriteSeq = 0;
+  let _canUseCanvas = null;
+  function canUseCanvas(){
+    if (_canUseCanvas !== null) return _canUseCanvas;
+    try{
+      if (typeof document === 'undefined'){ _canUseCanvas = false; return false; }
+      if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || '')){
+        _canUseCanvas = false;
+        return false;
+      }
+      const c = document.createElement('canvas');
+      _canUseCanvas = !!(c && c.getContext && c.getContext('2d'));
+    }catch(e){ _canUseCanvas = false; }
+    return _canUseCanvas;
+  }
+
+  function getUnicodeSprite(text, font, style, sizePt, color){
+    const key = `${text}|${font}|${style}|${sizePt}|${color.join(',')}`;
+    if (_glyphSpriteCache.has(key)) return _glyphSpriteCache.get(key);
+    if (!canUseCanvas()){
+      return null;
+    }
+    try{
+      const scale = 4; // 4x Retina DPI
+      const pxPerPt = (96 / 72) * scale;
+      const fontPx = Math.max(8, Math.round(sizePt * pxPerPt));
+      const weight = (style === 'bold' || style === 'bolditalic') ? '700' : '400';
+      const italic = (style === 'italic' || style === 'bolditalic') ? 'italic' : 'normal';
+      const fam = font === 'courier'
+        ? '"Courier New", Courier, monospace'
+        : 'Helvetica, "Liberation Sans", Arial, "Segoe UI Symbol", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+      const cssFont = `${italic} ${weight} ${fontPx}px ${fam}`;
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.font = cssFont;
+      const m = ctx.measureText(text);
+      const rawW = Math.max(Math.ceil(m.width), Math.ceil(fontPx * 0.4));
+      const padX = Math.ceil(fontPx * 0.12);
+      const cw = rawW + padX * 2;
+      const ch = Math.ceil(fontPx * 1.45);
+      const basePx = Math.round(fontPx * 1.05);
+
+      canvas.width = cw;
+      canvas.height = ch;
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.font = cssFont;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = rgbCss(color);
+      ctx.fillText(text, padX, basePx);
+
+      const mmPerCanvasPx = PT_TO_MM / pxPerPt;
+      const sprite = {
+        alias: 'uglyph_' + (++_spriteSeq),
+        dataUrl: canvas.toDataURL('image/png'),
+        advMm: m.width * mmPerCanvasPx,
+        imgWMm: cw * mmPerCanvasPx,
+        imgHMm: ch * mmPerCanvasPx,
+        offsetXMm: -padX * mmPerCanvasPx,
+        ascentMm: basePx * mmPerCanvasPx
+      };
+      _glyphSpriteCache.set(key, sprite);
+      return sprite;
+    }catch(e){
+      return null;
+    }
+  }
+
+  function applyDocFont(doc, font, style, sizePt){
+    doc.setFont(font === 'courier' ? 'courier' : 'helvetica', style || 'normal');
+    doc.setFontSize(sizePt);
+  }
+
+  function measureNonWinAnsiCluster(doc, text, font, style, sizePt, color){
+    const chars = Array.from(text).filter(c=>{
+      const cp = c.codePointAt(0);
+      return cp !== 0xFE0F && cp !== 0xFE0E;
+    });
+    if (chars.length > 0 && chars.every(c=> VECTOR_SYMBOL_SET.has(c))){
+      return chars.reduce((acc, c)=> acc + vectorSymbolAdvance(c, sizePt, font), 0);
+    }
+    const sp = getUnicodeSprite(text, font, style, sizePt, color || BODY_COLOR);
+    if (sp) return sp.advMm;
+    applyDocFont(doc, font, style, sizePt);
+    return doc.getTextWidth(toWinAnsiFallback(text));
+  }
+
+  function measureSegmentWidth(doc, seg, font, style, sizePt, color){
+    if (seg.safe){
+      applyDocFont(doc, font, style, sizePt);
+      return doc.getTextWidth(seg.text);
+    }
+    return measureNonWinAnsiCluster(doc, seg.text, font, style, sizePt, color);
+  }
+
+  function measureSafeTextWidth(doc, text, font, style, sizePt, color){
+    const segs = segmentByWinAnsi(text);
+    let total = 0;
+    for (const sg of segs) total += measureSegmentWidth(doc, sg, font, style, sizePt, color);
+    return total;
+  }
+
+  function drawSafePdfText(doc, rawText, x, y, opts){
+    const str = cleanControlChars(rawText || '');
+    if (!str) return;
+    const font = (opts && opts.font) || 'helvetica';
+    const style = (opts && opts.style) || 'normal';
+    const sizePt = (opts && opts.sizePt) || 10;
+    const color = (opts && opts.color) || INK;
+    const align = (opts && opts.align) || 'left';
+
+    const segs = segmentByWinAnsi(str);
+    if (segs.length === 1 && segs[0].safe){
+      applyDocFont(doc, font, style, sizePt);
+      doc.setTextColor(...color);
+      if (align === 'left') doc.text(segs[0].text, x, y);
+      else doc.text(segs[0].text, x, y, { align });
+      return;
+    }
+
+    const totalW = segs.reduce((acc, sg)=> acc + measureSegmentWidth(doc, sg, font, style, sizePt, color), 0);
+    let curX = align === 'center' ? x - totalW / 2 : align === 'right' ? x - totalW : x;
+    for (const sg of segs){
+      if (sg.safe){
+        applyDocFont(doc, font, style, sizePt);
+        doc.setTextColor(...color);
+        doc.text(sg.text, curX, y);
+        curX += doc.getTextWidth(sg.text);
+      } else {
+        const chars = Array.from(sg.text).filter(c=>{
+          const cp = c.codePointAt(0);
+          return cp !== 0xFE0F && cp !== 0xFE0E;
+        });
+        if (chars.length > 0 && chars.every(c=> VECTOR_SYMBOL_SET.has(c))){
+          for (const ch of chars){
+            curX += drawVectorSymbolPdf(doc, ch, curX, y, sizePt, color, font);
+          }
+          continue;
+        }
+        const sp = getUnicodeSprite(sg.text, font, style, sizePt, color);
+        if (sp){
+          doc.addImage(sp.dataUrl, 'PNG', curX + sp.offsetXMm, y - sp.ascentMm, sp.imgWMm, sp.imgHMm, sp.alias, 'FAST');
+          curX += sp.advMm;
+        } else {
+          const fb = toWinAnsiFallback(sg.text);
+          applyDocFont(doc, font, style, sizePt);
+          doc.setTextColor(...color);
+          doc.text(fb, curX, y);
+          curX += doc.getTextWidth(fb);
+        }
+      }
+    }
+  }
+
+  // ---------- Markdown AST parsing (marked.lexer + fallback) ----------
+  const PAGEBREAK_RE = /^\s*(?:<!--\s*(?:page[- ]?break|break)\s*-->|\\pagebreak|\\newpage)\s*$/i;
+
+  function fallbackInlineTokens(text){
+    const out = [];
+    const src = String(text || '');
+    const re = /(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(__(.+?)__)|(\*(.+?)\*)|(_(.+?)_)|(~~(.+?)~~)|(`([^`]+)`)|(\[([^\]]+)\]\(([^)]+)\))|(<br\s*\/?>)/gi;
+    let last = 0, m;
+    while ((m = re.exec(src))){
+      if (m.index > last) out.push({ type:'text', text: src.slice(last, m.index) });
+      if (m[2] !== undefined) out.push({ type:'strong', tokens:[{ type:'em', tokens: fallbackInlineTokens(m[2]) }] });
+      else if (m[4] !== undefined) out.push({ type:'strong', tokens: fallbackInlineTokens(m[4]) });
+      else if (m[6] !== undefined) out.push({ type:'strong', tokens: fallbackInlineTokens(m[6]) });
+      else if (m[8] !== undefined) out.push({ type:'em', tokens: fallbackInlineTokens(m[8]) });
+      else if (m[10] !== undefined) out.push({ type:'em', tokens: fallbackInlineTokens(m[10]) });
+      else if (m[12] !== undefined) out.push({ type:'del', tokens: fallbackInlineTokens(m[12]) });
+      else if (m[14] !== undefined) out.push({ type:'codespan', text: m[14] });
+      else if (m[16] !== undefined) out.push({ type:'link', href: m[17], text: m[16], tokens: fallbackInlineTokens(m[16]) });
+      else if (m[18] !== undefined) out.push({ type:'br' });
+      last = re.lastIndex;
+    }
+    if (last < src.length) out.push({ type:'text', text: src.slice(last) });
+    return out;
+  }
+
+  function fallbackLexer(md){
+    const lines = String(md || '').split('\n');
+    const tokens = [];
+    let i = 0;
+    while (i < lines.length){
+      const line = lines[i];
+      if (/^\s*$/.test(line)){ i++; continue; }
+      const fence = line.match(/^```(\S*)\s*$/);
+      if (fence){
+        const lang = fence[1] || '';
+        const codeLines = [];
+        i++;
+        while (i < lines.length && !/^```\s*$/.test(lines[i])){ codeLines.push(lines[i]); i++; }
+        if (i < lines.length) i++;
+        tokens.push({ type:'code', lang, text: codeLines.join('\n') });
+        continue;
+      }
+      const h = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
+      if (h){
+        tokens.push({ type:'heading', depth: h[1].length, text: h[2], tokens: fallbackInlineTokens(h[2]) });
+        i++; continue;
+      }
+      if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)){
+        tokens.push({ type:'hr' }); i++; continue;
+      }
+      if (/^\|?.+\|.+\|?\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/.test(lines[i+1])){
+        const splitRow = (r)=> r.trim().replace(/^\||\|$/g, '').split('|').map(c=>c.trim());
+        const headCells = splitRow(line);
+        const alignCells = splitRow(lines[i+1]).map(a=>{
+          if (/^:-+:$/.test(a)) return 'center';
+          if (/^-+:$/.test(a)) return 'right';
+          if (/^:-+$/.test(a)) return 'left';
+          return null;
+        });
+        i += 2;
+        const rows = [];
+        while (i < lines.length && /^\|?.+\|.*$/.test(lines[i]) && !/^\s*$/.test(lines[i])){
+          rows.push(splitRow(lines[i]).map(c=>({ text:c, tokens: fallbackInlineTokens(c) })));
+          i++;
+        }
+        tokens.push({
+          type:'table',
+          header: headCells.map(c=>({ text:c, tokens: fallbackInlineTokens(c) })),
+          align: alignCells,
+          rows
+        });
+        continue;
+      }
+      if (/^>\s?/.test(line)){
+        const qLines = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])){
+          qLines.push(lines[i].replace(/^>\s?/, ''));
+          i++;
+        }
+        tokens.push({ type:'blockquote', tokens: fallbackLexer(qLines.join('\n')) });
+        continue;
+      }
+      const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+      if (listMatch){
+        const parseListAt = (minIndent)=>{
+          const first = lines[i].match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+          const ordered = /\d+\./.test(first[2]);
+          const start = ordered ? parseInt(first[2], 10) : 1;
+          const items = [];
+          while (i < lines.length){
+            const m = lines[i].match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+            if (!m) break;
+            const ind = m[1].replace(/\t/g,'  ').length;
+            if (ind < minIndent) break;
+            const isOrd = /\d+\./.test(m[2]);
+            if (ind === minIndent && isOrd !== ordered) break;
+            if (ind > minIndent){
+              if (items.length) items[items.length - 1].tokens.push(parseListAt(ind));
+              else i++;
+              continue;
+            }
+            let itemText = m[3];
+            let task = false, checked = false;
+            const tm = itemText.match(/^\[([ xX])\]\s+(.*)$/);
+            if (tm){ task = true; checked = tm[1].toLowerCase() === 'x'; itemText = tm[2]; }
+            i++;
+            const itemTokens = [{ type:'text', text:itemText, tokens: fallbackInlineTokens(itemText) }];
+            while (i < lines.length && !/^\s*$/.test(lines[i])){
+              const sub = lines[i].match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+              if (sub){
+                const subInd = sub[1].replace(/\t/g,'  ').length;
+                if (subInd > minIndent){ itemTokens.push(parseListAt(subInd)); continue; }
+                break;
+              }
+              break;
+            }
+            items.push({ type:'list_item', task, checked, loose:false, tokens: itemTokens });
+          }
+          return { type:'list', ordered, start, loose:false, items };
+        };
+        tokens.push(parseListAt(listMatch[1].replace(/\t/g,'  ').length));
+        continue;
+      }
+      const pLines = [line];
+      i++;
+      while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^```/.test(lines[i]) &&
+             !/^#{1,6}\s+/.test(lines[i]) && !/^>\s?/.test(lines[i]) &&
+             !/^\s*([-*+]|\d+\.)\s+/.test(lines[i]) && !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[i])){
+        pLines.push(lines[i]);
+        i++;
+      }
+      const joined = pLines.join('\n');
+      const pTokens = [];
+      pLines.forEach((pl, li)=>{
+        if (li > 0) pTokens.push({ type:'br' });
+        pTokens.push(...fallbackInlineTokens(pl));
+      });
+      tokens.push({ type:'paragraph', text: joined, tokens: pTokens });
+    }
+    return tokens;
+  }
+
+  function parseMarkdownAST(md){
+    const normalized = String(md || '').replace(/\r\n?/g, '\n');
+    const rawLines = normalized.split('\n');
+    const chunks = [[]];
+    let inFence = false;
+    for (const ln of rawLines){
+      if (/^\s*```/.test(ln)) inFence = !inFence;
+      if (!inFence && PAGEBREAK_RE.test(ln)){
+        chunks.push([]);
+      } else {
+        chunks[chunks.length - 1].push(ln);
+      }
+    }
+    const ast = [];
+    chunks.forEach((chunkLines, ci)=>{
+      if (ci > 0) ast.push({ type:'pagebreak' });
+      const segment = chunkLines.join('\n');
+      if (!segment.trim()) return;
+      if (window.marked && typeof window.marked.lexer === 'function'){
+        try{
+          const lexed = window.marked.lexer(segment, { gfm:true, breaks:true });
+          ast.push(...lexed);
+          return;
+        }catch(e){}
+      }
+      ast.push(...fallbackLexer(segment));
+    });
+    return ast;
+  }
+
+  // ---------- Inline token flattening & rich line wrapping ----------
+  function sanitizeHref(href){
+    const h = String(href || '').trim();
+    if (/^\s*javascript:/i.test(h) || /^\s*data:/i.test(h)) return '';
+    return h;
+  }
+
+  function extractInlineRuns(tokens, baseStyle){
+    const runs = [];
+    const st = Object.assign({
+      bold:false, italic:false, strike:false, code:false, underline:false, link:'', color:null
+    }, baseStyle || {});
+
+    if (!Array.isArray(tokens)) return runs;
+
+    let htmlStyleStack = [];
+    let curHtml = Object.assign({}, st);
+
+    for (const tok of tokens){
+      if (!tok) continue;
+      const active = htmlStyleStack.length ? curHtml : st;
+
+      if (tok.type === 'br'){
+        runs.push({ br:true });
+      } else if (tok.type === 'codespan'){
+        const txt = cleanControlChars(decodeEntities(tok.text || '')).replace(/\n+/g, ' ');
+        if (txt) runs.push(Object.assign({}, active, { text:txt, code:true }));
+      } else if (tok.type === 'strong'){
+        runs.push(...extractInlineRuns(tok.tokens || [{ type:'text', text:tok.text || '' }], Object.assign({}, active, { bold:true })));
+      } else if (tok.type === 'em'){
+        runs.push(...extractInlineRuns(tok.tokens || [{ type:'text', text:tok.text || '' }], Object.assign({}, active, { italic:true })));
+      } else if (tok.type === 'del'){
+        runs.push(...extractInlineRuns(tok.tokens || [{ type:'text', text:tok.text || '' }], Object.assign({}, active, { strike:true })));
+      } else if (tok.type === 'link'){
+        const href = sanitizeHref(decodeEntities(tok.href || ''));
+        const inner = (tok.tokens && tok.tokens.length) ? tok.tokens : [{ type:'text', text: tok.text || href }];
+        runs.push(...extractInlineRuns(inner, Object.assign({}, active, {
+          link: href, color: BLUE, underline: true
+        })));
+      } else if (tok.type === 'image'){
+        const alt = cleanControlChars(decodeEntities(tok.text || 'image'));
+        const href = sanitizeHref(decodeEntities(tok.href || ''));
+        runs.push(Object.assign({}, active, {
+          text: `[Image: ${alt}]`, italic:true, color: href ? BLUE : MUTED, link: href, underline: !!href
+        }));
+      } else if (tok.type === 'escape'){
+        const txt = cleanControlChars(decodeEntities(tok.text || ''));
+        if (txt) runs.push(Object.assign({}, active, { text:txt }));
+      } else if (tok.type === 'html'){
+        const raw = String(tok.text || tok.raw || '').trim();
+        if (/^<br\s*\/?>$/i.test(raw)){
+          runs.push({ br:true });
+        } else if (/^<(strong|b)\b[^>]*>$/i.test(raw)){
+          htmlStyleStack.push(Object.assign({}, curHtml)); curHtml = Object.assign({}, curHtml, { bold:true });
+        } else if (/^<(em|i)\b[^>]*>$/i.test(raw)){
+          htmlStyleStack.push(Object.assign({}, curHtml)); curHtml = Object.assign({}, curHtml, { italic:true });
+        } else if (/^<(del|s|strike)\b[^>]*>$/i.test(raw)){
+          htmlStyleStack.push(Object.assign({}, curHtml)); curHtml = Object.assign({}, curHtml, { strike:true });
+        } else if (/^<u\b[^>]*>$/i.test(raw)){
+          htmlStyleStack.push(Object.assign({}, curHtml)); curHtml = Object.assign({}, curHtml, { underline:true });
+        } else if (/^<code\b[^>]*>$/i.test(raw)){
+          htmlStyleStack.push(Object.assign({}, curHtml)); curHtml = Object.assign({}, curHtml, { code:true });
+        } else if (/^<\/(strong|b|em|i|del|s|strike|u|code|a)>$/i.test(raw)){
+          curHtml = htmlStyleStack.pop() || Object.assign({}, st);
+        }
+      } else if (tok.type === 'text' || typeof tok.text === 'string'){
+        if (Array.isArray(tok.tokens) && tok.tokens.length > 0){
+          runs.push(...extractInlineRuns(tok.tokens, active));
+        } else {
+          const decoded = cleanControlChars(decodeEntities(tok.text || '').replace(/\t/g, '  '));
+          const parts = decoded.split('\n');
+          parts.forEach((part, pi)=>{
+            if (pi > 0) runs.push({ br:true });
+            if (part.length > 0) runs.push(Object.assign({}, active, { text: part }));
+          });
+        }
+      }
+    }
+    return runs;
+  }
+
+  function fontStyleFromRun(run){
+    if (run.code) return run.bold ? 'bold' : 'normal';
+    if (run.bold && run.italic) return 'bolditalic';
+    if (run.bold) return 'bold';
+    if (run.italic) return 'italic';
+    return 'normal';
+  }
+
+  function splitOverlongToken(doc, text, maxW, font, style, sizePt, color){
+    const chars = Array.from(text);
+    const chunks = [];
+    let cur = '';
+    let lastBreakIdx = -1;
+    for (let i = 0; i < chars.length; i++){
+      const cand = cur + chars[i];
+      const w = measureSafeTextWidth(doc, cand, font, style, sizePt, color);
+      if (cur && w > maxW){
+        if (lastBreakIdx > 0 && lastBreakIdx >= cur.length - 12){
+          chunks.push(cur.slice(0, lastBreakIdx + 1));
+          cur = cur.slice(lastBreakIdx + 1) + chars[i];
+        } else {
+          chunks.push(cur);
+          cur = chars[i];
+        }
+        lastBreakIdx = '/-_.,?&=+:;'.indexOf(chars[i]) >= 0 ? cur.length - 1 : -1;
+      } else {
+        cur = cand;
+        if ('/-_.,?&=+:;'.indexOf(chars[i]) >= 0) lastBreakIdx = cur.length - 1;
+      }
+    }
+    if (cur) chunks.push(cur);
+    return chunks;
+  }
+
+  function wrapInlineRuns(doc, runs, maxWidth, opts){
+    const baseSizePt = (opts && opts.sizePt) || 10.2;
+    const defaultColor = (opts && opts.color) || BODY_COLOR;
+    const maxW = Math.max(8, maxWidth);
+
+    const lines = [];
+    let curItems = [];
+    let curX = 0;
+
+    function pushLine(){
+      // Trim trailing whitespace item on line so center/right alignment is exact
+      while (curItems.length > 0 && curItems[curItems.length - 1].isSpace){
+        const popped = curItems.pop();
+        curX = Math.max(0, curX - popped.width);
+      }
+      lines.push({ items: curItems, width: curX });
+      curItems = [];
+      curX = 0;
+    }
+
+    for (const run of runs){
+      if (run.br){
+        pushLine();
+        continue;
+      }
+      if (!run.text) continue;
+
+      const isCode = !!run.code;
+      const font = isCode ? 'courier' : 'helvetica';
+      const style = fontStyleFromRun(run);
+      const sizePt = isCode ? baseSizePt * 0.88 : baseSizePt;
+      const color = run.color || (isCode ? CODE_INK : defaultColor);
+
+      if (isCode){
+        const pillPadX = Math.min(0.85, baseSizePt * 0.082);
+        const pillMarginX = 0.12;
+        const fullTextW = measureSafeTextWidth(doc, run.text, font, style, sizePt, color);
+        const fullBoxW = fullTextW + pillPadX * 2 + pillMarginX * 2;
+
+        if (fullBoxW <= maxW){
+          if (curX > 0 && curX + fullBoxW > maxW){
+            pushLine();
+          }
+          curItems.push({
+            text: run.text, font, style, sizePt, color,
+            code: true, pillPadX, pillMarginX,
+            textW: fullTextW, width: fullBoxW, x: curX,
+            underline: !!run.underline, strike: !!run.strike, link: run.link || '', isSpace: false
+          });
+          curX += fullBoxW;
+        } else {
+          // Very long inline code span: wrap into fitting code pill segments
+          if (curX > 0) pushLine();
+          const innerMax = Math.max(4, maxW - pillPadX * 2 - pillMarginX * 2);
+          const pieces = splitOverlongToken(doc, run.text, innerMax, font, style, sizePt, color);
+          pieces.forEach((pc, pi)=>{
+            if (pi > 0) pushLine();
+            const tw = measureSafeTextWidth(doc, pc, font, style, sizePt, color);
+            const bw = tw + pillPadX * 2 + pillMarginX * 2;
+            curItems.push({
+              text: pc, font, style, sizePt, color,
+              code: true, pillPadX, pillMarginX,
+              textW: tw, width: bw, x: 0,
+              underline: !!run.underline, strike: !!run.strike, link: run.link || '', isSpace: false
+            });
+            curX = bw;
+          });
+        }
+        continue;
+      }
+
+      // Normal proportional run: split preserving whitespace
+      const parts = run.text.split(/(\s+)/);
+      for (const tok of parts){
+        if (!tok) continue;
+        const isSpace = /^\s+$/.test(tok);
+        if (isSpace){
+          if (curX === 0) continue; // skip leading space on wrapped line
+          const sw = measureSafeTextWidth(doc, ' ', font, style, sizePt, color) * Math.min(tok.length, 4);
+          curItems.push({
+            text: ' '.repeat(Math.min(tok.length, 4)),
+            font, style, sizePt, color, code: false,
+            textW: sw, width: sw, x: curX,
+            underline: !!run.underline, strike: !!run.strike, link: run.link || '', isSpace: true
+          });
+          curX += sw;
+          continue;
+        }
+
+        const w = measureSafeTextWidth(doc, tok, font, style, sizePt, color);
+        if (w <= maxW){
+          if (curX > 0 && curX + w > maxW){
+            pushLine();
+          }
+          curItems.push({
+            text: tok, font, style, sizePt, color, code: false,
+            textW: w, width: w, x: curX,
+            underline: !!run.underline, strike: !!run.strike, link: run.link || '', isSpace: false
+          });
+          curX += w;
+        } else {
+          // Single overlong word / URL: break cleanly across lines
+          const subPieces = splitOverlongToken(doc, tok, maxW, font, style, sizePt, color);
+          for (const sp of subPieces){
+            const spW = measureSafeTextWidth(doc, sp, font, style, sizePt, color);
+            if (curX > 0 && curX + spW > maxW){
+              pushLine();
+            }
+            curItems.push({
+              text: sp, font, style, sizePt, color, code: false,
+              textW: spW, width: spW, x: curX,
+              underline: !!run.underline, strike: !!run.strike, link: run.link || '', isSpace: false
+            });
+            curX += spW;
+          }
+        }
+      }
+    }
+
+    if (curItems.length > 0 || lines.length === 0){
+      pushLine();
+    }
+    return lines;
+  }
+
+  function emitWrappedLineOps(ops, line, x0, baselineY, maxW, baseSizePt, align){
+    const baseEm = baseSizePt * PT_TO_MM;
+    const offsetX = align === 'center'
+      ? Math.max(0, (maxW - line.width) / 2)
+      : align === 'right'
+        ? Math.max(0, maxW - line.width)
+        : 0;
+
+    // Pass 1: emit inline code background pills first (so pills sit behind text)
+    for (const it of line.items){
+      if (it.code){
+        const pillH = baseEm * 1.18;
+        const pillY = (baselineY - 0.35 * baseEm) - pillH / 2;
+        const pillX = x0 + offsetX + it.x + it.pillMarginX;
+        const pillW = it.textW + it.pillPadX * 2;
+        ops.push({
+          op:'rect', x: pillX, y: pillY, w: pillW, h: pillH, r: 0.75,
+          fill: PILL_BG, stroke: PILL_BORDER, lineW: 0.2
+        });
+      }
+    }
+
+    // Pass 2: emit text, underlines, strikethroughs, and links
+    for (const it of line.items){
+      const drawX = x0 + offsetX + it.x + (it.code ? it.pillMarginX + it.pillPadX : 0);
+      ops.push({
+        op:'text', x: drawX, y: baselineY, text: it.text,
+        font: it.font, style: it.style, sizePt: it.sizePt,
+        color: it.color, link: it.link || '', width: it.textW
+      });
+      if (it.underline && !it.isSpace){
+        ops.push({
+          op:'line', x1: drawX, y1: baselineY + 0.55, x2: drawX + it.textW, y2: baselineY + 0.55,
+          color: it.color, lineW: 0.22
+        });
+      }
+      if (it.strike && !it.isSpace){
+        const sy = baselineY - 0.31 * (it.sizePt * PT_TO_MM);
+        ops.push({
+          op:'line', x1: drawX, y1: sy, x2: drawX + it.textW, y2: sy,
+          color: it.color, lineW: 0.25
+        });
+      }
+    }
+  }
+
+  // ---------- Box-drawing character vector support for code blocks ----------
+  const BOX_MAP = {
+    '\u2500':[1,1,0,0], '\u2501':[1,1,0,0], '\u2550':[1,1,0,0],
+    '\u2502':[0,0,1,1], '\u2503':[0,0,1,1], '\u2551':[0,0,1,1],
+    '\u250C':[0,1,0,1], '\u250F':[0,1,0,1], '\u2554':[0,1,0,1],
+    '\u2510':[1,0,0,1], '\u2513':[1,0,0,1], '\u2557':[1,0,0,1],
+    '\u2514':[0,1,1,0], '\u2517':[0,1,1,0], '\u255A':[0,1,1,0],
+    '\u2518':[1,0,1,0], '\u251B':[1,0,1,0], '\u255D':[1,0,1,0],
+    '\u251C':[0,1,1,1], '\u2523':[0,1,1,1], '\u2560':[0,1,1,1],
+    '\u2524':[1,0,1,1], '\u252B':[1,0,1,1], '\u2563':[1,0,1,1],
+    '\u252C':[1,1,0,1], '\u2533':[1,1,0,1], '\u2566':[1,1,0,1],
+    '\u2534':[1,1,1,0], '\u253B':[1,1,1,0], '\u2569':[1,1,1,0],
+    '\u253C':[1,1,1,1], '\u254B':[1,1,1,1], '\u256C':[1,1,1,1]
+  };
+
+  function expandTabs(line, tabSize){
+    const ts = tabSize || 4;
+    let out = '';
+    for (const ch of Array.from(cleanControlChars(line || ''))){
+      if (ch === '\t'){
+        const rem = ts - (Array.from(out).length % ts);
+        out += ' '.repeat(rem);
+      } else {
+        out += ch;
+      }
+    }
+    return out;
+  }
+
+  function emitCodeLineOps(ops, codeStr, x0, rowTopY, lineH, baselineY, charW, sizePt, color){
+    const chars = Array.from(codeStr);
+    let buf = '';
+    let bufStartCol = 0;
+
+    function flushBuf(){
+      if (!buf) return;
+      ops.push({
+        op:'text', x: x0 + bufStartCol * charW, y: baselineY, text: buf,
+        font:'courier', style:'normal', sizePt, color, link:'', width: Array.from(buf).length * charW
+      });
+      buf = '';
+    }
+
+    for (let col = 0; col < chars.length; col++){
+      const ch = chars[col];
+      const boxSpec = BOX_MAP[ch];
+      if (boxSpec){
+        flushBuf();
+        const cx0 = x0 + col * charW;
+        const cx1 = cx0 + charW;
+        const mx = (cx0 + cx1) / 2;
+        const cy0 = rowTopY;
+        const cy1 = rowTopY + lineH;
+        const my = (cy0 + cy1) / 2;
+        const [L, R, U, D] = boxSpec;
+        if (L && R) ops.push({ op:'line', x1:cx0, y1:my, x2:cx1, y2:my, color:MUTED, lineW:0.26 });
+        else if (L) ops.push({ op:'line', x1:cx0, y1:my, x2:mx, y2:my, color:MUTED, lineW:0.26 });
+        else if (R) ops.push({ op:'line', x1:mx, y1:my, x2:cx1, y2:my, color:MUTED, lineW:0.26 });
+
+        if (U && D) ops.push({ op:'line', x1:mx, y1:cy0, x2:mx, y2:cy1, color:MUTED, lineW:0.26 });
+        else if (U) ops.push({ op:'line', x1:mx, y1:cy0, x2:mx, y2:my, color:MUTED, lineW:0.26 });
+        else if (D) ops.push({ op:'line', x1:mx, y1:my, x2:mx, y2:cy1, color:MUTED, lineW:0.26 });
+      } else if (!isWinAnsiCp(ch.codePointAt(0))){
+        flushBuf();
+        ops.push({
+          op:'text', x: x0 + col * charW, y: baselineY, text: ch,
+          font:'courier', style:'normal', sizePt, color, link:'', width: charW
+        });
+      } else {
+        if (!buf) bufStartCol = col;
+        buf += ch;
+      }
+    }
+    flushBuf();
+  }
+
+  // ---------- Header geometry helper ----------
+  function computeTextHeaderSpec(doc, p, orientation, isContinuation){
+    const { w: PW, h: PH } = pageSize(orientation);
+    const bodyW = PW - MARGIN_X * 2;
+    const footerRuleY = PH - 20;
+    const bottomLimit = footerRuleY - 5;
+
+    if (!isContinuation){
+      let y = 24;
+      const hasTop = !!(p.eyebrow && p.eyebrow.trim()) || p.showStep;
+      const titleStr = (p.title || '').trim();
+      let titleLines = [];
+      if (titleStr){
+        if (hasTop) y += 8;
+        else y += 2;
+        applyDocFont(doc, 'helvetica', 'bold', 16.5);
+        titleLines = doc.splitTextToSize(toWinAnsiFallback(titleStr), bodyW);
+        y += titleLines.length * 7 + 2;
+      } else {
+        y += hasTop ? 5 : 0;
+      }
+      const ruleY = y;
+      const bodyStartY = ruleY + 7.5;
+      return {
+        PW, PH, marginX: MARGIN_X, bodyW,
+        ruleY, bodyStartY, bottomLimit,
+        bodyH: Math.max(40, bottomLimit - bodyStartY),
+        titleLines, isContinuation: false
+      };
+    } else {
+      const ruleY = 28.5;
+      const bodyStartY = ruleY + 6.5;
+      return {
+        PW, PH, marginX: MARGIN_X, bodyW,
+        ruleY, bodyStartY, bottomLimit,
+        bodyH: Math.max(40, bottomLimit - bodyStartY),
+        titleLines: [], isContinuation: true
+      };
+    }
+  }
+
+  // ---------- Paginated Markdown Layout Engine ----------
+  function paginateTextCard(p, cardIdx, baseStep){
+    const doc = getMeasureDoc();
+    const orientation = p.orientation === 'landscape' ? 'landscape' : 'portrait';
+    const ast = parseMarkdownAST(p.body || '');
+
+    const sheets = [];
+    const openQuotes = []; // active blockquote slices across page breaks
+
+    function makeSheet(partIdx){
+      const hs = computeTextHeaderSpec(doc, p, orientation, partIdx > 0);
+      return {
+        kind: 'text',
+        card: p,
+        cardIdx,
+        partIdx,
+        partCount: 1,
+        orientation,
+        baseStep,
+        step: baseStep,
+        isContinuation: partIdx > 0,
+        headerSpec: hs,
+        bodyW: hs.bodyW,
+        bodyH: hs.bodyH,
+        ops: [],
+        isEmpty: false
+      };
+    }
+
+    let curSheet = makeSheet(0);
+    sheets.push(curSheet);
+    let y = 0;
+
+    function flushOpenQuotesOnPageBreak(){
+      for (const q of openQuotes){
+        const endY = Math.max(q.startY + 3, y);
+        if (endY > q.startY + 0.5){
+          curSheet.ops.splice(q.opIdx, 0,
+            { op:'rect', x: q.x, y: q.startY, w: q.w, h: endY - q.startY, r: 1.0, fill: QUOTE_BG, stroke: null, lineW: 0 },
+            { op:'line', x1: q.x + 0.45, y1: q.startY + 0.3, x2: q.x + 0.45, y2: endY - 0.3, color: BLUE, lineW: 0.9 }
+          );
+        }
+      }
+    }
+
+    function nextPage(){
+      flushOpenQuotesOnPageBreak();
+      curSheet = makeSheet(sheets.length);
+      sheets.push(curSheet);
+      y = 0;
+      for (const q of openQuotes){
+        q.opIdx = curSheet.ops.length;
+        q.startY = 0;
+      }
+    }
+
+    function atTop(){
+      return y < 0.01 && curSheet.ops.length === 0;
+    }
+
+    function ensureSpace(h){
+      if (!atTop() && y + h > curSheet.bodyH){
+        nextPage();
+      }
+    }
+
+    // ---- Recursive block layout ----
+    const BODY_PT = 10.2;
+    const BODY_LH = 5.0;
+    const BODY_ASC = BODY_PT * PT_TO_MM * 0.78;
+
+    function layoutBlocks(blocks, x, w, ctx){
+      if (!Array.isArray(blocks)) return;
+      for (let bi = 0; bi < blocks.length; bi++){
+        const b = blocks[bi];
+        if (!b || b.type === 'space') continue;
+
+        if (b.type === 'pagebreak'){
+          if (!atTop()) nextPage();
+          continue;
+        }
+
+        if (b.type === 'heading'){
+          const depth = Math.min(6, Math.max(1, b.depth || 1));
+          const sizeMap = { 1:15.2, 2:13.0, 3:11.4, 4:10.4, 5:9.7, 6:9.3 };
+          const hPt = sizeMap[depth] || 10.4;
+          const hEm = hPt * PT_TO_MM;
+          const hLh = hEm * 1.34;
+          const hAsc = hEm * 0.78;
+          const topGap = depth === 1 ? 4.2 : depth === 2 ? 3.5 : depth === 3 ? 2.8 : 2.2;
+          const botGap = depth === 1 ? 2.6 : 1.8;
+
+          const hColor = depth >= 5 ? MUTED : INK;
+          const inlineTokens = (b.tokens && b.tokens.length) ? b.tokens : fallbackInlineTokens(b.text || '');
+          const runs = extractInlineRuns(inlineTokens, { bold:true, color: hColor });
+          const lines = wrapInlineRuns(doc, runs, w, { sizePt: hPt, color: hColor });
+          const blockH = lines.length * hLh + (depth === 1 ? 1.8 : 0);
+
+          // Widow/orphan protection: keep heading with its immediate lead-in content
+          let keepNextH = 11.5;
+          const nextBlk = blocks[bi + 1];
+          if (nextBlk){
+            if (nextBlk.type === 'code'){
+              const nLines = String(nextBlk.text || '').replace(/\n$/, '').split('\n').length;
+              keepNextH = nLines <= 12 ? (nLines * 4.15 + 6.5) : 18.0;
+            } else if (nextBlk.type === 'table'){
+              keepNextH = 22.0;
+            } else if (nextBlk.type === 'blockquote'){
+              keepNextH = 16.0;
+            }
+          }
+          const gapNeeded = atTop() ? 0 : topGap;
+          if (!atTop() && y + gapNeeded + blockH + Math.min(keepNextH, curSheet.bodyH * 0.45) > curSheet.bodyH){
+            nextPage();
+          } else if (!atTop()){
+            y += topGap;
+          }
+
+          for (const ln of lines){
+            ensureSpace(hLh);
+            emitWrappedLineOps(curSheet.ops, ln, x, y + hAsc, w, hPt, 'left');
+            y += hLh;
+          }
+          if (depth === 1){
+            y += 1.0;
+            curSheet.ops.push({ op:'line', x1: x, y1: y, x2: x + w, y2: y, color: H1_RULE, lineW: 0.25 });
+            y += 0.8;
+          }
+          y += botGap;
+          continue;
+        }
+
+        if (b.type === 'paragraph' || b.type === 'text'){
+          const defaultColor = (ctx && ctx.inQuote) ? MUTED : BODY_COLOR;
+          const inlineTokens = (b.tokens && b.tokens.length) ? b.tokens : fallbackInlineTokens(b.text || '');
+          const runs = extractInlineRuns(inlineTokens, {
+            italic: !!(ctx && ctx.inQuote),
+            color: defaultColor
+          });
+          const lines = wrapInlineRuns(doc, runs, w, { sizePt: BODY_PT, color: defaultColor });
+          if (lines.length === 1 && lines[0].items.length === 0) continue;
+
+          // Avoid stranding 1 orphan line at bottom of page when paragraph has >= 2 lines
+          if (!atTop() && lines.length >= 2 && y + BODY_LH * 2 > curSheet.bodyH){
+            nextPage();
+          }
+
+          for (const ln of lines){
+            ensureSpace(BODY_LH);
+            emitWrappedLineOps(curSheet.ops, ln, x, y + BODY_ASC, w, BODY_PT, 'left');
+            y += BODY_LH;
+          }
+          y += (ctx && ctx.tightList) ? 1.0 : 2.5;
+          continue;
+        }
+
+        if (b.type === 'list'){
+          const depth = (ctx && typeof ctx.listDepth === 'number') ? ctx.listDepth : 0;
+          const ordered = !!b.ordered;
+          const startNum = (ordered && typeof b.start === 'number' && !isNaN(b.start)) ? b.start : 1;
+          const items = b.items || [];
+
+          if (depth === 0 && !atTop()) y += 0.5;
+
+          items.forEach((item, idx2)=>{
+            const isTask = !!item.task;
+            const numLabel = `${startNum + idx2}.`;
+            let indent = 5.2;
+            if (isTask){
+              indent = 5.8;
+            } else if (ordered){
+              const mw = measureSafeTextWidth(doc, numLabel, 'helvetica', 'bold', BODY_PT, BLUE);
+              indent = Math.max(5.6, mw + 1.8);
+            }
+            const itemX = x + indent;
+            const itemW = Math.max(12, w - indent);
+
+            const drawMarker = (baselineY)=>{
+              const baseEm = BODY_PT * PT_TO_MM;
+              if (isTask){
+                const boxS = 3.2;
+                const cy = baselineY - 0.34 * baseEm;
+                const bx = x + 0.3;
+                const by = cy - boxS / 2;
+                if (item.checked){
+                  curSheet.ops.push({ op:'rect', x:bx, y:by, w:boxS, h:boxS, r:0.6, fill:BLUE, stroke:BLUE, lineW:0.25 });
+                  curSheet.ops.push({
+                    op:'check',
+                    x1: bx + boxS * 0.22, y1: by + boxS * 0.53,
+                    x2: bx + boxS * 0.43, y2: by + boxS * 0.75,
+                    x3: bx + boxS * 0.80, y3: by + boxS * 0.26,
+                    color: WHITE, lineW: 0.42
+                  });
+                } else {
+                  curSheet.ops.push({ op:'rect', x:bx, y:by, w:boxS, h:boxS, r:0.6, fill:WHITE, stroke:[148,163,184], lineW:0.3 });
+                }
+              } else if (ordered){
+                curSheet.ops.push({
+                  op:'text', x: x, y: baselineY, text: numLabel,
+                  font:'helvetica', style:'bold', sizePt: BODY_PT, color: BLUE, link:'', width: indent - 1.5
+                });
+              } else {
+                const cy = baselineY - 0.34 * baseEm;
+                const cx = x + 1.5;
+                const lvl = depth % 3;
+                if (lvl === 0){
+                  curSheet.ops.push({ op:'circle', cx, cy, r: 0.82, fill: BLUE, stroke: null, lineW: 0 });
+                } else if (lvl === 1){
+                  curSheet.ops.push({ op:'circle', cx, cy, r: 0.78, fill: null, stroke: BLUE, lineW: 0.32 });
+                } else {
+                  curSheet.ops.push({ op:'rect', x: cx - 0.65, y: cy - 0.65, w: 1.3, h: 1.3, r: 0.2, fill: MUTED, stroke: null, lineW: 0 });
+                }
+              }
+            };
+
+            const childTokens = (item.tokens || []).filter(t=> t && t.type !== 'space');
+            if (childTokens.length === 0){
+              ensureSpace(BODY_LH);
+              drawMarker(y + BODY_ASC);
+              y += BODY_LH + 0.8;
+              return;
+            }
+
+            const firstTok = childTokens[0];
+            let restStart = 0;
+            if (firstTok.type === 'text' || firstTok.type === 'paragraph'){
+              restStart = 1;
+              const defaultColor = (ctx && ctx.inQuote) ? MUTED : BODY_COLOR;
+              const inl = (firstTok.tokens && firstTok.tokens.length)
+                ? firstTok.tokens
+                : fallbackInlineTokens(firstTok.text || '');
+              const runs = extractInlineRuns(inl, { italic: !!(ctx && ctx.inQuote), color: defaultColor });
+              const lines = wrapInlineRuns(doc, runs, itemW, { sizePt: BODY_PT, color: defaultColor });
+
+              ensureSpace(BODY_LH);
+              drawMarker(y + BODY_ASC);
+              lines.forEach((ln)=>{
+                ensureSpace(BODY_LH);
+                emitWrappedLineOps(curSheet.ops, ln, itemX, y + BODY_ASC, itemW, BODY_PT, 'left');
+                y += BODY_LH;
+              });
+              y += item.loose ? 1.6 : 0.9;
+            } else {
+              ensureSpace(BODY_LH);
+              drawMarker(y + BODY_ASC);
+            }
+
+            if (restStart < childTokens.length){
+              layoutBlocks(childTokens.slice(restStart), itemX, itemW, {
+                listDepth: depth + 1,
+                tightList: !item.loose,
+                inQuote: !!(ctx && ctx.inQuote)
+              });
+            }
+          });
+
+          if (depth === 0) y += 1.6;
+          continue;
+        }
+
+        if (b.type === 'blockquote'){
+          if (!atTop()) y += 1.2;
+          ensureSpace(BODY_LH + 3.6);
+
+          const padX = 4.4;
+          const padY = 2.0;
+          const qState = { x, w, opIdx: curSheet.ops.length, startY: y };
+          openQuotes.push(qState);
+          y += padY;
+
+          const innerTokens = (b.tokens && b.tokens.length)
+            ? b.tokens
+            : [{ type:'paragraph', text: b.text || '', tokens: fallbackInlineTokens(b.text || '') }];
+          layoutBlocks(innerTokens, x + padX, Math.max(12, w - padX - 2.0), {
+            listDepth: (ctx && ctx.listDepth) || 0,
+            tightList: false,
+            inQuote: true
+          });
+
+          // Remove trailing block margin inside quote so bottom padding is balanced
+          y = Math.max(qState.startY + BODY_LH, y - 1.2) + padY;
+          openQuotes.pop();
+          if (y > qState.startY + 0.5){
+            curSheet.ops.splice(qState.opIdx, 0,
+              { op:'rect', x: qState.x, y: qState.startY, w: qState.w, h: y - qState.startY, r: 1.0, fill: QUOTE_BG, stroke: null, lineW: 0 },
+              { op:'line', x1: qState.x + 0.45, y1: qState.startY + 0.3, x2: qState.x + 0.45, y2: y - 0.3, color: BLUE, lineW: 0.9 }
+            );
+          }
+          y += 2.6;
+          continue;
+        }
+
+        if (b.type === 'code'){
+          if (!atTop()) y += 1.2;
+          const codePt = 8.6;
+          const codeEm = codePt * PT_TO_MM;
+          const codeLh = 4.15;
+          const codeAsc = codeEm * 0.76;
+          const padX = 3.2;
+          const padY = 2.5;
+          const innerW = Math.max(12, w - padX * 2);
+
+          applyDocFont(doc, 'courier', 'normal', codePt);
+          const charW = doc.getTextWidth('M') || (codeEm * 0.60);
+          const maxCols = Math.max(8, Math.floor(innerW / charW));
+
+          const rawCodeLines = String(b.text || '').replace(/\r\n?/g, '\n').split('\n');
+          // Trim single trailing empty line if present from fence
+          if (rawCodeLines.length > 1 && rawCodeLines[rawCodeLines.length - 1] === '') rawCodeLines.pop();
+
+          const wrappedCode = [];
+          for (const rawLn of rawCodeLines){
+            const expanded = expandTabs(rawLn, 4);
+            const chars = Array.from(expanded);
+            if (chars.length <= maxCols){
+              wrappedCode.push(expanded);
+            } else {
+              const leadMatch = expanded.match(/^( +)/);
+              const baseIndent = leadMatch ? leadMatch[1].length : 0;
+              const contIndent = ' '.repeat(Math.min(baseIndent + 2, Math.floor(maxCols * 0.25)));
+              let pos = 0, first = true;
+              while (pos < chars.length){
+                const prefix = first ? '' : contIndent;
+                const avail = Math.max(4, maxCols - prefix.length);
+                let take = Math.min(avail, chars.length - pos);
+                if (pos + take < chars.length){
+                  // Prefer breaking after space/delimiter within last 24 chars
+                  for (let back = 0; back < Math.min(24, take - 6); back++){
+                    const c = chars[pos + take - 1 - back];
+                    if (' ,;:/\\|('.indexOf(c) >= 0){
+                      take = take - back;
+                      break;
+                    }
+                  }
+                }
+                const sliceStr = chars.slice(pos, pos + take).join('');
+                wrappedCode.push(prefix + (first ? sliceStr : sliceStr.replace(/^ +/, '')));
+                pos += take;
+                first = false;
+              }
+            }
+          }
+          if (wrappedCode.length === 0) wrappedCode.push('');
+
+          const minStartLines = wrappedCode.length <= 12 ? wrappedCode.length : 4;
+          ensureSpace(padY * 2 + minStartLines * codeLh);
+
+          let idxLine = 0;
+          let isFirstChunk = true;
+          while (idxLine < wrappedCode.length){
+            const availH = curSheet.bodyH - y;
+            let fitLines = Math.floor((availH - padY * 2 + 0.01) / codeLh);
+            if (fitLines < 1){
+              if (!atTop()){ nextPage(); continue; }
+              fitLines = 1;
+            }
+            const takeLines = Math.min(fitLines, wrappedCode.length - idxLine);
+            const boxH = padY * 2 + takeLines * codeLh;
+
+            curSheet.ops.push({
+              op:'rect', x, y, w, h: boxH, r: 1.4,
+              fill: CODE_BG, stroke: BOX_BORDER, lineW: 0.28
+            });
+
+            if (isFirstChunk && b.lang){
+              const langLabel = String(b.lang).trim().slice(0, 16);
+              if (langLabel){
+                const lw = measureSafeTextWidth(doc, langLabel, 'helvetica', 'bold', 7.0, MUTED);
+                if (Array.from(wrappedCode[idxLine]).length * charW + lw + 6 < innerW){
+                  curSheet.ops.push({
+                    op:'text', x: x + w - padX - lw, y: y + padY + codeAsc - 0.3,
+                    text: langLabel, font:'helvetica', style:'bold', sizePt: 7.0, color: MUTED, link:'', width: lw
+                  });
+                }
+              }
+            }
+
+            for (let k = 0; k < takeLines; k++){
+              const rowTop = y + padY + k * codeLh;
+              emitCodeLineOps(curSheet.ops, wrappedCode[idxLine + k], x + padX, rowTop, codeLh, rowTop + codeAsc, charW, codePt, CODE_INK);
+            }
+
+            y += boxH;
+            idxLine += takeLines;
+            isFirstChunk = false;
+            if (idxLine < wrappedCode.length){
+              nextPage();
+            }
+          }
+          y += 2.8;
+          continue;
+        }
+
+        if (b.type === 'table'){
+          const headerCells = b.header || [];
+          const bodyRows = b.rows || [];
+          const colCount = Math.max(
+            headerCells.length,
+            bodyRows.reduce((mx, r)=> Math.max(mx, (r || []).length), 0)
+          );
+          if (colCount === 0) continue;
+
+          if (!atTop()) y += 1.4;
+
+          const cellPt = colCount >= 7 ? 7.8 : colCount >= 5 ? 8.6 : 9.3;
+          const cellEm = cellPt * PT_TO_MM;
+          const cellLh = cellEm * 1.38;
+          const cellAsc = cellEm * 0.77;
+          const cellPadX = colCount >= 6 ? 1.7 : 2.4;
+          const cellPadY = 1.9;
+          const aligns = b.align || [];
+
+          // Smart proportional column width calculation
+          const natW = new Array(colCount).fill(8);
+          const minW = new Array(colCount).fill(Math.min(14, w / colCount));
+
+          const inspectCell = (cell, cIdx, isHead)=>{
+            const inl = (cell && cell.tokens && cell.tokens.length)
+              ? cell.tokens
+              : fallbackInlineTokens((cell && cell.text) || '');
+            const runs = extractInlineRuns(inl, { bold: isHead, color: isHead ? INK : BODY_COLOR });
+            const unwrapped = wrapInlineRuns(doc, runs, 1000, { sizePt: cellPt, color: isHead ? INK : BODY_COLOR });
+            let maxLine = 0, maxWord = 0;
+            for (const ln of unwrapped){
+              if (ln.width > maxLine) maxLine = ln.width;
+              for (const it of ln.items){
+                if (!it.isSpace && it.width > maxWord) maxWord = it.width;
+              }
+            }
+            const pad = cellPadX * 2 + 1.0;
+            natW[cIdx] = Math.max(natW[cIdx], maxLine + pad);
+            minW[cIdx] = Math.max(minW[cIdx], Math.min(maxWord + pad, w * 0.36));
+          };
+
+          for (let c = 0; c < colCount; c++) inspectCell(headerCells[c], c, true);
+          for (const row of bodyRows){
+            for (let c = 0; c < colCount; c++) inspectCell(row && row[c], c, false);
+          }
+
+          let colW = new Array(colCount);
+          const sumNat = natW.reduce((a, v)=> a + v, 0);
+          const sumMin = minW.reduce((a, v)=> a + v, 0);
+
+          if (sumNat <= w){
+            const extra = w - sumNat;
+            for (let c = 0; c < colCount; c++){
+              colW[c] = natW[c] + extra * (natW[c] / sumNat);
+            }
+          } else if (sumMin >= w){
+            for (let c = 0; c < colCount; c++){
+              colW[c] = w * (minW[c] / sumMin);
+            }
+          } else {
+            const rem = w - sumMin;
+            const weights = natW.map((nw, c)=> Math.sqrt(Math.max(0.5, nw - minW[c])));
+            const sumWeights = weights.reduce((a, v)=> a + v, 0) || 1;
+            for (let c = 0; c < colCount; c++){
+              colW[c] = minW[c] + rem * (weights[c] / sumWeights);
+            }
+          }
+
+          const buildRowLayout = (cells, isHead)=>{
+            const wrappedCells = [];
+            let maxLines = 1;
+            for (let c = 0; c < colCount; c++){
+              const cell = cells && cells[c];
+              const inl = (cell && cell.tokens && cell.tokens.length)
+                ? cell.tokens
+                : fallbackInlineTokens((cell && cell.text) || '');
+              const runs = extractInlineRuns(inl, { bold: isHead, color: isHead ? INK : BODY_COLOR });
+              const cw = Math.max(4, colW[c] - cellPadX * 2);
+              const lns = wrapInlineRuns(doc, runs, cw, { sizePt: cellPt, color: isHead ? INK : BODY_COLOR });
+              wrappedCells.push(lns);
+              if (lns.length > maxLines) maxLines = lns.length;
+            }
+            return {
+              wrappedCells,
+              maxLines,
+              h: maxLines * cellLh + cellPadY * 2
+            };
+          };
+
+          const emitRowSlice = (rowLayout, startLine, lineCount, bgFill, isHead)=>{
+            const sliceH = lineCount * cellLh + cellPadY * 2;
+            curSheet.ops.push({
+              op:'rect', x, y, w, h: sliceH, r: 0,
+              fill: bgFill, stroke: LINE, lineW: 0.25
+            });
+            let cx = x;
+            for (let c = 0; c < colCount; c++){
+              if (c > 0){
+                curSheet.ops.push({
+                  op:'line', x1: cx, y1: y, x2: cx, y2: y + sliceH,
+                  color: LINE, lineW: 0.22
+                });
+              }
+              const cellLines = rowLayout.wrappedCells[c];
+              const colAlign = aligns[c] || 'left';
+              const innerCW = Math.max(4, colW[c] - cellPadX * 2);
+              for (let li = 0; li < lineCount; li++){
+                const ln = cellLines[startLine + li];
+                if (!ln) continue;
+                const by = y + cellPadY + li * cellLh + cellAsc;
+                emitWrappedLineOps(curSheet.ops, ln, cx + cellPadX, by, innerCW, cellPt, colAlign);
+              }
+              cx += colW[c];
+            }
+            if (isHead){
+              curSheet.ops.push({
+                op:'line', x1: x, y1: y + sliceH, x2: x + w, y2: y + sliceH,
+                color: TABLE_HEAD_BORDER, lineW: 0.35
+              });
+            }
+            y += sliceH;
+          };
+
+          const headLayout = buildRowLayout(headerCells, true);
+          const rowLayouts = bodyRows.map(r=> buildRowLayout(r, false));
+
+          const firstNeed = headLayout.h + (rowLayouts.length > 0 ? Math.min(rowLayouts[0].h, 25) : 0);
+          if (!atTop() && y + firstNeed > curSheet.bodyH){
+            nextPage();
+          }
+
+          emitRowSlice(headLayout, 0, headLayout.maxLines, TABLE_HEAD_BG, true);
+
+          rowLayouts.forEach((rl, rIdx)=>{
+            const bg = (rIdx % 2 === 1) ? TABLE_ALT_BG : WHITE;
+            if (y + rl.h <= curSheet.bodyH){
+              emitRowSlice(rl, 0, rl.maxLines, bg, false);
+              return;
+            }
+            // If whole row fits on a fresh page (with repeated header), move to next page cleanly
+            const nextSheetBodyH = computeTextHeaderSpec(doc, p, orientation, true).bodyH;
+            if (headLayout.h + rl.h <= nextSheetBodyH){
+              nextPage();
+              emitRowSlice(headLayout, 0, headLayout.maxLines, TABLE_HEAD_BG, true);
+              emitRowSlice(rl, 0, rl.maxLines, bg, false);
+              return;
+            }
+            // Extra-tall row larger than a single page: split row across pages cleanly
+            let startLn = 0;
+            while (startLn < rl.maxLines){
+              let fitLns = Math.floor((curSheet.bodyH - y - cellPadY * 2 + 0.01) / cellLh);
+              if (fitLns < 1){
+                nextPage();
+                emitRowSlice(headLayout, 0, headLayout.maxLines, TABLE_HEAD_BG, true);
+                fitLns = Math.max(1, Math.floor((curSheet.bodyH - y - cellPadY * 2 + 0.01) / cellLh));
+              }
+              const take = Math.min(fitLns, rl.maxLines - startLn);
+              emitRowSlice(rl, startLn, take, bg, false);
+              startLn += take;
+              if (startLn < rl.maxLines){
+                nextPage();
+                emitRowSlice(headLayout, 0, headLayout.maxLines, TABLE_HEAD_BG, true);
+              }
+            }
+          });
+
+          y += 3.0;
+          continue;
+        }
+
+        if (b.type === 'hr'){
+          if (atTop()) continue;
+          if (y + 8 > curSheet.bodyH){
+            nextPage();
+            continue;
+          }
+          y += 2.0;
+          curSheet.ops.push({ op:'line', x1: x, y1: y, x2: x + w, y2: y, color: LINE, lineW: 0.3 });
+          y += 3.2;
+          continue;
+        }
+
+        if (b.type === 'html'){
+          const raw = String(b.text || b.raw || '').trim();
+          if (PAGEBREAK_RE.test(raw)){
+            if (!atTop()) nextPage();
+          } else if (/^<hr\s*\/?>$/i.test(raw)){
+            if (!atTop()){
+              y += 2.0;
+              curSheet.ops.push({ op:'line', x1: x, y1: y, x2: x + w, y2: y, color: LINE, lineW: 0.3 });
+              y += 3.2;
+            }
+          } else if (/^<br\s*\/?>$/i.test(raw)){
+            if (!atTop()) y += BODY_LH * 0.7;
+          } else if (!/^<!--[\s\S]*-->$/.test(raw)){
+            const stripped = cleanControlChars(decodeEntities(raw.replace(/<[^>]+>/g, ' '))).replace(/\s+/g, ' ').trim();
+            if (stripped){
+              layoutBlocks([{ type:'paragraph', text: stripped, tokens:[{ type:'text', text: stripped }] }], x, w, ctx);
+            }
+          }
+          continue;
+        }
+      }
+    }
+
+    if (ast.length === 0){
+      curSheet.isEmpty = true;
+    } else {
+      layoutBlocks(ast, 0, curSheet.bodyW, { listDepth: 0, tightList: false, inQuote: false });
+      if (sheets.length === 1 && curSheet.ops.length === 0){
+        curSheet.isEmpty = true;
+      }
+      // Drop accidental trailing empty sheet if explicit pagebreak was at very end
+      while (sheets.length > 1 && sheets[sheets.length - 1].ops.length === 0){
+        sheets.pop();
+      }
+    }
+
+    const partCount = sheets.length;
+    sheets.forEach((sh, i)=>{
+      sh.partCount = partCount;
+      if (i > 0){
+        sh.step = baseStep ? `${baseStep} · Cont. (${i+1}/${partCount})` : `Cont. (${i+1}/${partCount})`;
+      } else {
+        sh.step = baseStep;
+      }
+    });
+    return sheets;
+  }
+
+  // ---------- Render ops -> SVG (Live Preview) ----------
+  function n2(v){ return Math.round(v * 100) / 100; }
+
+  function opsToSvgHtml(ops, bodyW, bodyH){
+    const parts = [
+      `<svg class="md-svg" viewBox="0 0 ${n2(bodyW)} ${n2(bodyH)}" preserveAspectRatio="xMinYMin meet" xmlns="http://www.w3.org/2000/svg">`
+    ];
+    for (const o of ops){
+      if (o.op === 'rect'){
+        const fill = o.fill ? rgbCss(o.fill) : 'none';
+        const stroke = o.stroke ? rgbCss(o.stroke) : 'none';
+        const sw = o.stroke ? n2(o.lineW || 0.25) : 0;
+        const rx = o.r ? ` rx="${n2(o.r)}" ry="${n2(o.r)}"` : '';
+        parts.push(`<rect x="${n2(o.x)}" y="${n2(o.y)}" width="${n2(o.w)}" height="${n2(o.h)}"${rx} fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`);
+      } else if (o.op === 'line'){
+        parts.push(`<line x1="${n2(o.x1)}" y1="${n2(o.y1)}" x2="${n2(o.x2)}" y2="${n2(o.y2)}" stroke="${rgbCss(o.color)}" stroke-width="${n2(o.lineW || 0.25)}" stroke-linecap="round"/>`);
+      } else if (o.op === 'circle'){
+        const fill = o.fill ? rgbCss(o.fill) : 'none';
+        const stroke = o.stroke ? rgbCss(o.stroke) : 'none';
+        const sw = o.stroke ? n2(o.lineW || 0.25) : 0;
+        parts.push(`<circle cx="${n2(o.cx)}" cy="${n2(o.cy)}" r="${n2(o.r)}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`);
+      } else if (o.op === 'check'){
+        parts.push(`<polyline points="${n2(o.x1)},${n2(o.y1)} ${n2(o.x2)},${n2(o.y2)} ${n2(o.x3)},${n2(o.y3)}" fill="none" stroke="${rgbCss(o.color)}" stroke-width="${n2(o.lineW || 0.4)}" stroke-linecap="round" stroke-linejoin="round"/>`);
+      } else if (o.op === 'text'){
+        const fsMm = n2(o.sizePt * PT_TO_MM);
+        const fam = o.font === 'courier'
+          ? "'Courier New', Courier, monospace"
+          : "Helvetica, 'Liberation Sans', Arial, sans-serif";
+        const fw = (o.style === 'bold' || o.style === 'bolditalic') ? '700' : '400';
+        const fs = (o.style === 'italic' || o.style === 'bolditalic') ? 'italic' : 'normal';
+        const tEl = `<text x="${n2(o.x)}" y="${n2(o.y)}" fill="${rgbCss(o.color)}" font-family="${fam}" font-size="${fsMm}" font-weight="${fw}" font-style="${fs}" xml:space="preserve" style="white-space:pre;">${escapeHtml(o.text)}</text>`;
+        if (o.link){
+          parts.push(`<a href="${escapeHtml(o.link)}" target="_blank" rel="noopener noreferrer">${tEl}</a>`);
+        } else {
+          parts.push(tEl);
+        }
+      }
+    }
+    parts.push('</svg>');
+    return parts.join('');
+  }
+
+  // ---------- Replay ops -> jsPDF (Export) ----------
+  function replayOpsToPdf(doc, ops, ox, oy){
+    for (const o of ops){
+      if (o.op === 'rect'){
+        let mode = '';
+        if (o.fill){ doc.setFillColor(...o.fill); mode += 'F'; }
+        if (o.stroke){ doc.setDrawColor(...o.stroke); doc.setLineWidth(o.lineW || 0.25); mode += 'D'; }
+        if (!mode) continue;
+        if (o.r && o.r > 0){
+          doc.roundedRect(ox + o.x, oy + o.y, o.w, o.h, o.r, o.r, mode);
+        } else {
+          doc.rect(ox + o.x, oy + o.y, o.w, o.h, mode);
+        }
+      } else if (o.op === 'line'){
+        doc.setDrawColor(...o.color);
+        doc.setLineWidth(o.lineW || 0.25);
+        doc.line(ox + o.x1, oy + o.y1, ox + o.x2, oy + o.y2);
+      } else if (o.op === 'circle'){
+        let mode = '';
+        if (o.fill){ doc.setFillColor(...o.fill); mode += 'F'; }
+        if (o.stroke){ doc.setDrawColor(...o.stroke); doc.setLineWidth(o.lineW || 0.25); mode += 'S'; }
+        if (mode) doc.circle(ox + o.cx, oy + o.cy, o.r, mode);
+      } else if (o.op === 'check'){
+        doc.setDrawColor(...o.color);
+        doc.setLineWidth(o.lineW || 0.4);
+        doc.line(ox + o.x1, oy + o.y1, ox + o.x2, oy + o.y2);
+        doc.line(ox + o.x2, oy + o.y2, ox + o.x3, oy + o.y3);
+      } else if (o.op === 'text'){
+        drawSafePdfText(doc, o.text, ox + o.x, oy + o.y, {
+          font: o.font, style: o.style, sizePt: o.sizePt, color: o.color, align: 'left'
+        });
+        if (o.link && typeof doc.link === 'function'){
+          const em = o.sizePt * PT_TO_MM;
+          try{
+            doc.link(ox + o.x, oy + o.y - em * 0.82, Math.max(2, o.width || em), em * 1.1, { url: o.link });
+          }catch(e){}
+        }
+      }
+    }
+  }
+
+  // ---------- Unified Deck Layout Builder ----------
+  function stepLabelFor(p, idx){
+    if (!p.showStep) return '';
+    return (p.stepLabel && p.stepLabel.trim()) ? p.stepLabel.trim() : `Step ${idx+1} of ${pages.length}`;
+  }
+
+  function buildDeckLayout(){
+    const physicalSheets = [];
+    const cardPageRanges = new Map();
+
+    // Page 1: Cover
+    physicalSheets.push({
+      kind: 'cover',
+      orientation: coverOrientation === 'landscape' ? 'landscape' : 'portrait',
+      pageNum: 1
+    });
+
+    pages.forEach((p, idx)=>{
+      const baseStep = stepLabelFor(p, idx);
+      const startPage = physicalSheets.length + 1;
+      if (p.type === 'screenshot'){
+        physicalSheets.push({
+          kind: 'screenshot',
+          card: p,
+          cardIdx: idx,
+          orientation: p.orientation === 'landscape' ? 'landscape' : 'portrait',
+          step: baseStep,
+          pageNum: startPage
+        });
+        cardPageRanges.set(p.id, { start: startPage, end: startPage, count: 1 });
+      } else {
+        const textSheets = paginateTextCard(p, idx, baseStep);
+        textSheets.forEach((ts)=>{
+          ts.pageNum = physicalSheets.length + 1;
+          physicalSheets.push(ts);
+        });
+        const endPage = physicalSheets.length;
+        cardPageRanges.set(p.id, { start: startPage, end: endPage, count: textSheets.length });
+      }
+    });
+
+    return {
+      sheets: physicalSheets,
+      totalPages: physicalSheets.length,
+      cardPageRanges
+    };
+  }
+
+  function updateFormPageLabels(deck){
+    const layout = deck || buildDeckLayout();
+    const heads = pagesListEl.querySelectorAll('.page-card-head');
+    heads.forEach((head, idx)=>{
+      const p = pages[idx];
+      if (!p) return;
+      const range = layout.cardPageRanges.get(p.id);
+      const ptitleEl = head.querySelector('.ptitle');
+      const pillEl = head.querySelector('.pages-pill');
+      if (ptitleEl){
+        const prefix = range
+          ? (range.count > 1 ? `P.${range.start}–${range.end}` : `${range.start}.`)
+          : `${idx + 2}.`;
+        ptitleEl.textContent = `${prefix} ${p.title || 'Untitled page'}`;
+      }
+      if (pillEl){
+        if (range && range.count > 1){
+          pillEl.textContent = `${range.count} pages`;
+          pillEl.classList.remove('hidden');
+        } else {
+          pillEl.textContent = '';
+          pillEl.classList.add('hidden');
+        }
+      }
+    });
+  }
+
+  // ---------- Live Preview rendering ----------
+  function renderPreview(){
+    const deck = buildDeckLayout();
+    const total = deck.totalPages;
+    updateFormPageLabels(deck);
+
+    previewWrap.innerHTML = '';
+    const extraAutoPages = total - (pages.length + 1);
+    pageCountLabel.textContent = total + (total === 1 ? ' page' : ' pages') +
+      (extraAutoPages > 0 ? ` (${extraAutoPages} auto-continued)` : '');
+
+    const docCode = docCodeEl.value || 'AD-EC-000';
+    const docTitle = docTitleEl.value || 'Untitled Deck';
+    const footerBrand = `${docCodeEl.value || ''} | ${docTitleEl.value || ''}`;
+
+    deck.sheets.forEach((sh)=>{
+      if (sh.kind === 'cover'){
+        const coverEl = document.createElement('div');
+        coverEl.innerHTML = `<div class="sheet-label">Cover — ${sh.orientation} — Page 1 of ${total}</div>`;
+        const sheet = document.createElement('div');
+        sheet.className = 'sheet cover' + (sh.orientation === 'landscape' ? ' landscape' : '');
+        sheet.style.position = 'relative';
+        const tags = docTagsEl.value.trim();
+        const maturity = docMaturityEl.value.trim();
+        sheet.innerHTML = `
+          <div class="doccode">${escapeHtml(docCode)}</div>
+          <div class="ctitle">${escapeHtml(docTitle)}</div>
+          <div class="csub">${escapeHtml(docSubtitleEl.value || '')}</div>
+          ${tags ? `<div class="ctags">${escapeHtml(tags)}</div>` : ''}
+          ${maturity ? `<div class="cmaturity">${escapeHtml(maturity)}</div>` : ''}
+          <div class="sheet-footer" style="position:absolute; left:32px; right:32px; bottom:26px;">
+            <div class="sf-left"><img src="${LOGO_DATA_URL}"/><span>${escapeHtml(footerBrand)}</span></div>
+            <div class="sf-right">Page 1 of ${total}</div>
+          </div>
+        `;
+        coverEl.appendChild(sheet);
+        previewWrap.appendChild(coverEl);
+        return;
+      }
+
+      const p = sh.card;
+      const wrap = document.createElement('div');
+
+      if (sh.kind === 'screenshot'){
+        wrap.innerHTML = `<div class="sheet-label">Screenshot page — ${sh.orientation} — Page ${sh.pageNum} of ${total}</div>`;
+        const s = document.createElement('div');
+        s.className = 'sheet content' + (sh.orientation === 'landscape' ? ' landscape' : '');
+        s.innerHTML = `
+          <div class="cp-top">
+            <div class="cp-eyebrow">${escapeHtml(p.eyebrow || '')}</div>
+            ${sh.step ? `<div class="cp-step">${escapeHtml(sh.step)}</div>` : ''}
+          </div>
+          <div class="cp-title">${escapeHtml(p.title || '')}</div>
+          <hr class="cp-rule"/>
+          <div class="cp-imgbox ${p.imgData ? '' : 'empty'}">
+            ${p.imgData ? `<img src="${p.imgData}"/>` : 'No screenshot uploaded yet'}
+          </div>
+          <div class="cp-caption">${escapeHtml(p.caption || '')}</div>
+          <div class="sheet-footer">
+            <div class="sf-left"><img src="${LOGO_DATA_URL}"/><span>${escapeHtml(footerBrand)}</span></div>
+            <div class="sf-right">Page ${sh.pageNum} of ${total}</div>
+          </div>
+        `;
+        wrap.appendChild(s);
+        previewWrap.appendChild(wrap);
+        return;
+      }
+
+      // Text page (1 or more auto-paginated sheets)
+      const partTag = sh.partCount > 1 ? ` (Part ${sh.partIdx + 1} of ${sh.partCount})` : '';
+      wrap.innerHTML = `<div class="sheet-label">Text page${partTag} — ${sh.orientation} — Page ${sh.pageNum} of ${total}</div>`;
+      const s = document.createElement('div');
+      s.className = 'sheet content text-sheet' +
+        (sh.orientation === 'landscape' ? ' landscape' : '') +
+        (sh.isContinuation ? ' is-cont' : '');
+
+      const bodyHtml = sh.isEmpty
+        ? `<div class="cp-body"><div class="cp-body-empty">Paste or type Markdown in the left panel</div></div>`
+        : `<div class="cp-body">${opsToSvgHtml(sh.ops, sh.bodyW, sh.bodyH)}</div>`;
+
+      if (!sh.isContinuation){
+        const titleTrim = (p.title || '').trim();
+        s.innerHTML = `
+          <div class="cp-top">
+            <div class="cp-eyebrow">${escapeHtml(p.eyebrow || '')}</div>
+            ${sh.step ? `<div class="cp-step">${escapeHtml(sh.step)}</div>` : ''}
+          </div>
+          ${titleTrim ? `<div class="cp-title">${escapeHtml(titleTrim)}</div>` : ''}
+          <hr class="cp-rule"/>
+          ${bodyHtml}
+          <div class="sheet-footer">
+            <div class="sf-left"><img src="${LOGO_DATA_URL}"/><span>${escapeHtml(footerBrand)}</span></div>
+            <div class="sf-right">Page ${sh.pageNum} of ${total}</div>
+          </div>
+        `;
+      } else {
+        const eyebrowTrim = (p.eyebrow || '').trim();
+        const titleTrim = (p.title || '').trim();
+        let leftHeader = escapeHtml(eyebrowTrim);
+        if (titleTrim){
+          leftHeader += `${eyebrowTrim ? ' ' : ''}<span class="cont-sec">${eyebrowTrim ? '· ' : ''}${escapeHtml(titleTrim)}</span>`;
+        }
+        s.innerHTML = `
+          <div class="cp-top">
+            <div class="cp-eyebrow">${leftHeader}</div>
+            ${sh.step ? `<div class="cp-step">${escapeHtml(sh.step)}</div>` : ''}
+          </div>
+          <hr class="cp-rule"/>
+          ${bodyHtml}
+          <div class="sheet-footer">
+            <div class="sf-left"><img src="${LOGO_DATA_URL}"/><span>${escapeHtml(footerBrand)}</span></div>
+            <div class="sf-right">Page ${sh.pageNum} of ${total}</div>
+          </div>
+        `;
+      }
+
+      wrap.appendChild(s);
+      previewWrap.appendChild(wrap);
+    });
+  }
+
+  // ---------- PDF Document Builder & Download ----------
   $('generateBtn').addEventListener('click', generatePdf);
 
-  function generatePdf(){
+  function buildPdfDocument(){
     const { jsPDF } = window.jspdf;
-    const coverSize = pageSize(coverOrientation);
-    const doc = new jsPDF({ unit:'mm', format:'letter', orientation:coverOrientation });
-    const marginX = 19;
-    const total = pages.length + 1;
+    const deck = buildDeckLayout();
+    const total = deck.totalPages;
+
+    const firstSheet = deck.sheets[0];
+    const doc = new jsPDF({ unit:'mm', format:'letter', orientation: firstSheet.orientation });
 
     const docCode = docCodeEl.value.trim() || 'AD-EC-000';
     const docTitle = docTitleEl.value.trim() || 'Untitled Deck';
@@ -944,121 +2652,223 @@
     const tags = docTagsEl.value.trim();
     const maturity = docMaturityEl.value.trim();
 
-    // ---- Cover ----
-    drawFooter(doc, coverSize.w, coverSize.h, marginX, docCode, docTitle, 1, total);
-    doc.setTextColor(...BLUE);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(12);
-    doc.text(docCode, coverSize.w/2, coverSize.h*0.40, { align:'center' });
+    deck.sheets.forEach((sh, sIdx)=>{
+      if (sIdx > 0){
+        doc.addPage('letter', sh.orientation);
+      }
+      const { w: PW, h: PH } = pageSize(sh.orientation);
+      drawFooter(doc, PW, PH, MARGIN_X, docCode, docTitle, sh.pageNum, total);
 
-    doc.setTextColor(...INK);
-    doc.setFontSize(24);
-    const titleLines = doc.splitTextToSize(docTitle, coverSize.w - marginX*2 - 30);
-    let ty = coverSize.h*0.40 + 10;
-    titleLines.forEach(line=>{ doc.text(line, coverSize.w/2, ty, { align:'center' }); ty += 9.5; });
+      if (sh.kind === 'cover'){
+        drawSafePdfText(doc, docCode, PW / 2, PH * 0.40, {
+          font:'helvetica', style:'bold', sizePt: 12, color: BLUE, align:'center'
+        });
 
-    if (docSubtitle){
-      doc.setFont('helvetica','normal');
-      doc.setFontSize(13.5);
-      doc.setTextColor(...MUTED);
-      doc.text(docSubtitle, coverSize.w/2, ty + 3, { align:'center' });
-      ty += 3;
-    }
-    if (tags){
-      doc.setFont('helvetica','normal');
-      doc.setFontSize(9.5);
-      doc.setTextColor(...MUTED);
-      doc.text(tags, coverSize.w/2, ty + 14, { align:'center' });
-    }
-    if (maturity){
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(9.5);
-      doc.setTextColor(...BLUE);
-      doc.text(maturity, coverSize.w/2, ty + 20, { align:'center' });
-    }
+        applyDocFont(doc, 'helvetica', 'bold', 24);
+        const titleLines = doc.splitTextToSize(toWinAnsiFallback(docTitle), PW - MARGIN_X * 2 - 30);
+        // Split original docTitle by words into matching lines so Unicode stays intact
+        const rawTitleLines = splitDisplayLines(doc, docTitle, PW - MARGIN_X * 2 - 30, 'helvetica', 'bold', 24, INK);
+        let ty = PH * 0.40 + 10;
+        (rawTitleLines.length ? rawTitleLines : titleLines).forEach(line=>{
+          drawSafePdfText(doc, line, PW / 2, ty, {
+            font:'helvetica', style:'bold', sizePt: 24, color: INK, align:'center'
+          });
+          ty += 9.5;
+        });
 
-    // ---- Content pages ----
-    pages.forEach((p, idx)=>{
-      const orientation = p.orientation === 'landscape' ? 'landscape' : 'portrait';
-      doc.addPage('letter', orientation);
-      const { w: PW, h: PH } = pageSize(orientation);
-      const pageNum = idx + 2;
-      drawFooter(doc, PW, PH, marginX, docCode, docTitle, pageNum, total);
-
-      let y = 24;
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(10);
-      doc.setTextColor(...BLUE);
-      doc.text((p.eyebrow||'').toUpperCase(), marginX, y);
-
-      const step = stepLabelFor(p, idx);
-      if (step){
-        doc.setFont('helvetica','normal');
-        doc.setFontSize(8.5);
-        doc.setTextColor(...MUTED);
-        doc.text(step, PW - marginX, y, { align:'right' });
+        if (docSubtitle){
+          drawSafePdfText(doc, docSubtitle, PW / 2, ty + 3, {
+            font:'helvetica', style:'normal', sizePt: 13.5, color: MUTED, align:'center'
+          });
+          ty += 3;
+        }
+        if (tags){
+          drawSafePdfText(doc, tags, PW / 2, ty + 14, {
+            font:'helvetica', style:'normal', sizePt: 9.5, color: MUTED, align:'center'
+          });
+        }
+        if (maturity){
+          drawSafePdfText(doc, maturity, PW / 2, ty + 20, {
+            font:'helvetica', style:'bold', sizePt: 9.5, color: BLUE, align:'center'
+          });
+        }
+        return;
       }
 
-      y += 8;
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(16.5);
-      doc.setTextColor(...INK);
-      const titleLines2 = doc.splitTextToSize(p.title||'', PW - marginX*2);
-      titleLines2.forEach(line=>{ doc.text(line, marginX, y); y += 7; });
-      y += 2;
-      doc.setDrawColor(...LINE);
-      doc.setLineWidth(0.3);
-      doc.line(marginX, y, PW - marginX, y);
-      y += 10;
+      const p = sh.card;
 
-      const footerTop = PH - 26;
-      const bottomLimit = footerTop - 6;
+      if (sh.kind === 'screenshot'){
+        let y = 24;
+        if (p.eyebrow){
+          drawSafePdfText(doc, (p.eyebrow || '').toUpperCase(), MARGIN_X, y, {
+            font:'helvetica', style:'bold', sizePt: 10, color: BLUE, align:'left'
+          });
+        }
+        if (sh.step){
+          drawSafePdfText(doc, sh.step, PW - MARGIN_X, y, {
+            font:'helvetica', style:'normal', sizePt: 8.5, color: MUTED, align:'right'
+          });
+        }
 
-      if (p.type === 'screenshot'){
+        y += 8;
+        const shotTitleLines = splitDisplayLines(doc, p.title || '', PW - MARGIN_X * 2, 'helvetica', 'bold', 16.5, INK);
+        shotTitleLines.forEach(line=>{
+          drawSafePdfText(doc, line, MARGIN_X, y, {
+            font:'helvetica', style:'bold', sizePt: 16.5, color: INK, align:'left'
+          });
+          y += 7;
+        });
+        y += 2;
+        doc.setDrawColor(...LINE);
+        doc.setLineWidth(0.3);
+        doc.line(MARGIN_X, y, PW - MARGIN_X, y);
+        y += 10;
+
+        const footerTop = PH - 26;
+        const bottomLimit = footerTop - 6;
+        const boxW = PW - MARGIN_X * 2;
+        const capLines = p.caption
+          ? splitDisplayLines(doc, p.caption, boxW, 'helvetica', 'normal', 9.5, MUTED)
+          : [];
+        const captionReserve = capLines.length > 0 ? Math.max(16, capLines.length * 4.6 + 7) : 4;
         const boxTop = y;
-        const captionReserve = p.caption ? 16 : 4;
         const boxBottom = bottomLimit - captionReserve;
         const boxH = Math.max(boxBottom - boxTop, 30);
-        const boxW = PW - marginX*2;
 
         doc.setDrawColor(...BOX_BORDER);
         doc.setLineWidth(0.35);
-        doc.roundedRect(marginX, boxTop, boxW, boxH, 2, 2);
+        doc.roundedRect(MARGIN_X, boxTop, boxW, boxH, 2, 2);
 
         if (p.imgData && p.imgW && p.imgH){
           const pad = 3;
-          const availW = boxW - pad*2;
-          const availH = boxH - pad*2;
-          const scale = Math.min(availW/p.imgW, availH/p.imgH);
+          const availW = boxW - pad * 2;
+          const availH = boxH - pad * 2;
+          const scale = Math.min(availW / p.imgW, availH / p.imgH);
           const drawW = p.imgW * scale;
           const drawH = p.imgH * scale;
-          const ix = marginX + (boxW - drawW)/2;
-          const iy = boxTop + (boxH - drawH)/2;
+          const ix = MARGIN_X + (boxW - drawW) / 2;
+          const iy = boxTop + (boxH - drawH) / 2;
           const fmt = p.imgData.substring(11, p.imgData.indexOf(';')).toUpperCase();
-          try{ doc.addImage(p.imgData, fmt === 'PNG' ? 'PNG' : 'JPEG', ix, iy, drawW, drawH, undefined, 'FAST'); }
-          catch(e){ doc.addImage(p.imgData, 'JPEG', ix, iy, drawW, drawH, undefined, 'FAST'); }
+          const imgAlias = 'shot_img_' + (p.id || sh.pageNum);
+          try{ doc.addImage(p.imgData, fmt === 'PNG' ? 'PNG' : 'JPEG', ix, iy, drawW, drawH, imgAlias, 'FAST'); }
+          catch(e){ try{ doc.addImage(p.imgData, 'JPEG', ix, iy, drawW, drawH, imgAlias, 'FAST'); }catch(e2){} }
         } else {
           doc.setFont('helvetica','normal');
           doc.setFontSize(10);
           doc.setTextColor(190,196,204);
-          doc.text('No screenshot uploaded', marginX + boxW/2, boxTop + boxH/2, { align:'center' });
+          doc.text('No screenshot uploaded', MARGIN_X + boxW / 2, boxTop + boxH / 2, { align:'center' });
         }
 
-        if (p.caption){
-          doc.setFont('helvetica','normal');
-          doc.setFontSize(9.5);
-          doc.setTextColor(...MUTED);
-          const capLines = doc.splitTextToSize(p.caption, boxW);
+        if (capLines.length > 0){
           let cy = boxBottom + 8;
-          capLines.forEach(line=>{ doc.text(line, marginX, cy); cy += 4.6; });
+          capLines.forEach(line=>{
+            drawSafePdfText(doc, line, MARGIN_X, cy, {
+              font:'helvetica', style:'normal', sizePt: 9.5, color: MUTED, align:'left'
+            });
+            cy += 4.6;
+          });
+        }
+        return;
+      }
+
+      // ---- Text page (Part 1 or Continuation) ----
+      const hs = sh.headerSpec;
+      if (!sh.isContinuation){
+        let y = 24;
+        const hasTop = !!(p.eyebrow && p.eyebrow.trim()) || !!sh.step;
+        if (p.eyebrow && p.eyebrow.trim()){
+          drawSafePdfText(doc, p.eyebrow.trim().toUpperCase(), MARGIN_X, y, {
+            font:'helvetica', style:'bold', sizePt: 10, color: BLUE, align:'left'
+          });
+        }
+        if (sh.step){
+          drawSafePdfText(doc, sh.step, PW - MARGIN_X, y, {
+            font:'helvetica', style:'normal', sizePt: 8.5, color: MUTED, align:'right'
+          });
+        }
+        const titleTrim = (p.title || '').trim();
+        if (titleTrim){
+          y += hasTop ? 8 : 2;
+          const tLines = splitDisplayLines(doc, titleTrim, hs.bodyW, 'helvetica', 'bold', 16.5, INK);
+          tLines.forEach(line=>{
+            drawSafePdfText(doc, line, MARGIN_X, y, {
+              font:'helvetica', style:'bold', sizePt: 16.5, color: INK, align:'left'
+            });
+            y += 7;
+          });
         }
       } else {
-        renderMarkdownPDF(doc, p.body, marginX, y, PW - marginX*2, bottomLimit, {
-          ink: INK, body: BODY_COLOR, muted: MUTED, blue: BLUE, line: LINE, box: BOX_BORDER
-        });
+        const y = 24;
+        const eyebrowTrim = (p.eyebrow || '').trim().toUpperCase();
+        const titleTrim = (p.title || '').trim();
+        const stepWidth = sh.step ? measureSafeTextWidth(doc, sh.step, 'helvetica', 'normal', 8.5, MUTED) + 6 : 0;
+        const maxLeftW = Math.max(40, hs.bodyW - stepWidth);
+
+        let curLeftX = MARGIN_X;
+        if (eyebrowTrim){
+          drawSafePdfText(doc, eyebrowTrim, curLeftX, y, {
+            font:'helvetica', style:'bold', sizePt: 9.5, color: BLUE, align:'left'
+          });
+          curLeftX += measureSafeTextWidth(doc, eyebrowTrim, 'helvetica', 'bold', 9.5, BLUE) + 2.2;
+        }
+        if (titleTrim && curLeftX - MARGIN_X < maxLeftW - 12){
+          const prefix = eyebrowTrim ? '·  ' : '';
+          const remW = maxLeftW - (curLeftX - MARGIN_X);
+          const fitted = truncateToWidth(doc, prefix + titleTrim, remW, 'helvetica', 'bold', 9.2, MUTED);
+          drawSafePdfText(doc, fitted, curLeftX, y, {
+            font:'helvetica', style:'bold', sizePt: 9.2, color: MUTED, align:'left'
+          });
+        }
+        if (sh.step){
+          drawSafePdfText(doc, sh.step, PW - MARGIN_X, y, {
+            font:'helvetica', style:'normal', sizePt: 8.5, color: MUTED, align:'right'
+          });
+        }
       }
+
+      doc.setDrawColor(...LINE);
+      doc.setLineWidth(0.3);
+      doc.line(MARGIN_X, hs.ruleY, PW - MARGIN_X, hs.ruleY);
+
+      replayOpsToPdf(doc, sh.ops, MARGIN_X, hs.bodyStartY);
     });
 
+    return { doc, deck, docCode };
+  }
+
+  function splitDisplayLines(doc, str, maxW, font, style, sizePt, color){
+    const cleaned = cleanControlChars(str || '');
+    if (!cleaned) return [''];
+    const words = cleaned.split(/\s+/);
+    const lines = [];
+    let cur = '';
+    for (const wd of words){
+      const cand = cur ? cur + ' ' + wd : wd;
+      if (cur && measureSafeTextWidth(doc, cand, font, style, sizePt, color) > maxW){
+        lines.push(cur);
+        cur = wd;
+      } else {
+        cur = cand;
+      }
+    }
+    if (cur || lines.length === 0) lines.push(cur);
+    return lines;
+  }
+
+  function truncateToWidth(doc, str, maxW, font, style, sizePt, color){
+    const cleaned = cleanControlChars(str || '');
+    if (measureSafeTextWidth(doc, cleaned, font, style, sizePt, color) <= maxW) return cleaned;
+    const chars = Array.from(cleaned);
+    let out = '';
+    for (const ch of chars){
+      if (measureSafeTextWidth(doc, out + ch + '…', font, style, sizePt, color) > maxW) break;
+      out += ch;
+    }
+    return out + '…';
+  }
+
+  function generatePdf(){
+    const { doc, docCode } = buildPdfDocument();
     const filename = (docCode || 'deck').replace(/[^a-z0-9\-]+/gi,'_') + '.pdf';
     doc.save(filename);
   }
@@ -1068,16 +2878,28 @@
     doc.setDrawColor(...LINE);
     doc.setLineWidth(0.3);
     doc.line(marginX, fy, PW - marginX, fy);
-    try{ doc.addImage(LOGO_DATA_URL, 'PNG', marginX, fy + 3.2, 4.6, 4.6); }catch(e){}
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(8.2);
-    doc.setTextColor(...INK);
-    doc.text(`${docCode} | ${docTitle}`, marginX + 6.5, fy + 6.8);
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(8.2);
-    doc.setTextColor(...MUTED);
-    doc.text(`Page ${pageNum} of ${total}`, PW - marginX, fy + 6.8, { align:'right' });
+    try{ doc.addImage(LOGO_DATA_URL, 'PNG', marginX, fy + 3.2, 4.6, 4.6, 'adpl_footer_logo', 'FAST'); }catch(e){}
+    const pageText = `Page ${pageNum} of ${total}`;
+    const pageW = measureSafeTextWidth(doc, pageText, 'helvetica', 'normal', 8.2, MUTED);
+    const maxBrandW = Math.max(30, PW - marginX * 2 - 6.5 - pageW - 6);
+    const brandText = truncateToWidth(doc, `${docCode} | ${docTitle}`, maxBrandW, 'helvetica', 'bold', 8.2, INK);
+    drawSafePdfText(doc, brandText, marginX + 6.5, fy + 6.8, {
+      font:'helvetica', style:'bold', sizePt: 8.2, color: INK, align:'left'
+    });
+    drawSafePdfText(doc, pageText, PW - marginX, fy + 6.8, {
+      font:'helvetica', style:'normal', sizePt: 8.2, color: MUTED, align:'right'
+    });
   }
+
+  // Expose helper API for diagnostics/testing
+  window.ADPLDeck = {
+    getPages: () => pages,
+    setPages: (next) => { pages = next; renderForm(); renderPreview(); },
+    buildDeckLayout,
+    buildPdfDocument,
+    renderForm,
+    renderPreview
+  };
 
   // ---------- init ----------
   renderForm();
