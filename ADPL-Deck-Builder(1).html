@@ -205,20 +205,36 @@
     border-top:1px solid var(--panel-border);
     background:var(--panel);
   }
+  .gen-actions{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+  }
   .gen-btn{
     width:100%;
     background:var(--blue);
     color:#fff;
-    border:none;
-    padding:13px 16px;
-    font-size:14.5px;
+    border:1.5px solid var(--blue);
+    padding:12px 12px;
+    font-size:13.5px;
     font-weight:800;
     border-radius:9px;
     cursor:pointer;
-    display:flex; align-items:center; justify-content:center; gap:8px;
-    transition:background .15s;
+    display:flex; align-items:center; justify-content:center; gap:7px;
+    transition:background .15s, border-color .15s, color .15s, opacity .15s;
   }
-  .gen-btn:hover{ background:var(--blue-dark); }
+  .gen-btn:hover{ background:var(--blue-dark); border-color:var(--blue-dark); }
+  .gen-btn:disabled{ opacity:0.65; cursor:wait; }
+  .gen-btn.docx{
+    background:#fff;
+    color:var(--blue);
+    border:1.5px solid var(--blue);
+  }
+  .gen-btn.docx:hover{
+    background:#EFF7FC;
+    border-color:var(--blue-dark);
+    color:var(--blue-dark);
+  }
   .gen-note{ font-size:11.5px; color:var(--muted); text-align:center; margin-top:8px; }
 
   /* ---------- Right: preview column ---------- */
@@ -409,7 +425,7 @@
       <span class="name">ADPL</span>
     </div>
     <div class="tool-title">Capability Deck Builder</div>
-    <div class="tool-sub">Fill in the fields below to generate a client-ready PDF walkthrough in the AD-EC template style — cover page, screenshot pages, and text-only pages.</div>
+    <div class="tool-sub">Fill in the fields below to generate a client-ready PDF or editable Word (.docx) walkthrough in the AD-EC template style — cover page, screenshot pages, and text-only pages.</div>
 
     <!-- COVER -->
     <div class="section">
@@ -453,8 +469,11 @@
     </div>
 
     <div class="generate-bar">
-      <button class="gen-btn" id="generateBtn">⬇ Generate &amp; Download PDF</button>
-      <div class="gen-note">US Letter · auto-paginates long Markdown · matches AD-EC template</div>
+      <div class="gen-actions">
+        <button class="gen-btn" id="generateBtn">⬇ Download PDF</button>
+        <button class="gen-btn docx" id="generateDocxBtn">⬇ Download DOCX</button>
+      </div>
+      <div class="gen-note">US Letter · PDF &amp; editable Word (.docx) · matches AD-EC template</div>
     </div>
   </div>
 
@@ -2893,12 +2912,1830 @@
     });
   }
 
+  // ========================================================================
+  // ---------- Pure-JS OOXML (.docx) Document Builder & Download -----------
+  // ========================================================================
+  const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const DOCX_FONT_SANS = 'Arial';
+  const DOCX_FONT_MONO = 'Consolas';
+
+  function rgbHex(c){
+    return c.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+
+  function mmToTwip(mm){ return Math.round(mm * 1440 / 25.4); }
+  function mmToEmu(mm){ return Math.round(mm * 36000); }
+  function ptToHalfPt(pt){ return Math.max(2, Math.round(pt * 2)); }
+
+  function xmlSanitize(str){
+    if (str == null) return '';
+    let out = '';
+    const s = String(str);
+    for (let i = 0; i < s.length; i++){
+      const c = s.charCodeAt(i);
+      // Handle surrogate pairs safely so unpaired surrogates never corrupt XML
+      if (c >= 0xD800 && c <= 0xDBFF){
+        if (i + 1 < s.length){
+          const c2 = s.charCodeAt(i + 1);
+          if (c2 >= 0xDC00 && c2 <= 0xDFFF){
+            out += s[i] + s[i + 1];
+            i++;
+          }
+        }
+        continue;
+      }
+      if (c >= 0xDC00 && c <= 0xDFFF) continue;
+      // XML 1.0 legal character ranges
+      if (c === 0x09 || c === 0x0A || c === 0x0D || (c >= 0x20 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0xFFFD)){
+        out += s[i];
+      }
+    }
+    return out;
+  }
+
+  function xmlEsc(str){
+    return xmlSanitize(str).replace(/[&<>"']/g, m => ({
+      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;'
+    }[m]));
+  }
+
+  function normalizeDocxHref(href){
+    const safe = sanitizeHref(href);
+    if (!safe) return '';
+    const cleaned = xmlSanitize(safe).trim().replace(/\s+/g, '%20');
+    if (/^(?:https?:\/\/|mailto:|tel:|ftp:\/\/)/i.test(cleaned)) return cleaned;
+    return '';
+  }
+
+  // ---------- Binary, Base64, Image Normalization & ZIP writer ----------
+  function utf8Bytes(str){
+    if (typeof TextEncoder !== 'undefined'){
+      return new TextEncoder().encode(str);
+    }
+    const enc = unescape(encodeURIComponent(str));
+    const arr = new Uint8Array(enc.length);
+    for (let i = 0; i < enc.length; i++) arr[i] = enc.charCodeAt(i);
+    return arr;
+  }
+
+  function base64ToBytes(b64){
+    const clean = String(b64 || '').replace(/\s+/g, '');
+    if (typeof atob === 'function'){
+      const bin = atob(clean);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return arr;
+    }
+    if (typeof Buffer !== 'undefined'){
+      return new Uint8Array(Buffer.from(clean, 'base64'));
+    }
+    throw new Error('Base64 decoding not supported in this environment.');
+  }
+
+  function parseDataUrl(dataUrl){
+    const m = /^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,([\s\S]+)$/i.exec(String(dataUrl || '').trim());
+    if (!m) return null;
+    return { mime: (m[1] || 'application/octet-stream').toLowerCase(), bytes: base64ToBytes(m[2]) };
+  }
+
+  function probeImageDimensions(bytes, ext){
+    if (!bytes || bytes.length < 24) return null;
+    // PNG IHDR: magic 8 bytes + chunk len 4 + 'IHDR' 4 + width(4 BE) + height(4 BE)
+    if (ext === 'png' && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47){
+      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const w = dv.getUint32(16, false);
+      const h = dv.getUint32(20, false);
+      if (w > 0 && h > 0) return { w, h };
+    }
+    // JPEG SOF0/SOF1/SOF2 marker scan
+    if (ext === 'jpeg' && bytes[0] === 0xFF && bytes[1] === 0xD8){
+      let off = 2;
+      while (off + 8 < bytes.length){
+        if (bytes[off] !== 0xFF){ off++; continue; }
+        let marker = bytes[off + 1];
+        while (marker === 0xFF && off + 2 < bytes.length){ off++; marker = bytes[off + 1]; }
+        if (marker === 0xD8 || marker === 0xD9 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)){
+          off += 2; continue;
+        }
+        const segLen = (bytes[off + 2] << 8) | bytes[off + 3];
+        if (segLen < 2 || off + 2 + segLen > bytes.length) break;
+        if ((marker >= 0xC0 && marker <= 0xC3) || (marker >= 0xC5 && marker <= 0xC7) ||
+            (marker >= 0xC9 && marker <= 0xCB) || (marker >= 0xCD && marker <= 0xCF)){
+          const h = (bytes[off + 5] << 8) | bytes[off + 6];
+          const w = (bytes[off + 7] << 8) | bytes[off + 8];
+          if (w > 0 && h > 0) return { w, h };
+          break;
+        }
+        off += 2 + segLen;
+      }
+    }
+    return null;
+  }
+
+  async function normalizeImageForDocx(dataUrl){
+    const parsed = parseDataUrl(dataUrl);
+    if (!parsed) return null;
+    if (parsed.mime === 'image/png'){
+      const dims = probeImageDimensions(parsed.bytes, 'png');
+      return { ext:'png', mime:'image/png', bytes: parsed.bytes, w: dims ? dims.w : 0, h: dims ? dims.h : 0 };
+    }
+    if (parsed.mime === 'image/jpeg' || parsed.mime === 'image/jpg'){
+      const dims = probeImageDimensions(parsed.bytes, 'jpeg');
+      return { ext:'jpeg', mime:'image/jpeg', bytes: parsed.bytes, w: dims ? dims.w : 0, h: dims ? dims.h : 0 };
+    }
+    // Convert WebP / GIF / BMP / SVG etc. via canvas into universally compatible PNG
+    if (canUseCanvas() && typeof Image !== 'undefined'){
+      try{
+        const pngDataUrl = await new Promise((resolve, reject)=>{
+          const img = new Image();
+          img.onload = ()=>{
+            try{
+              const c = document.createElement('canvas');
+              c.width = img.naturalWidth || 800;
+              c.height = img.naturalHeight || 600;
+              c.getContext('2d').drawImage(img, 0, 0);
+              resolve(c.toDataURL('image/png'));
+            }catch(err){ reject(err); }
+          };
+          img.onerror = reject;
+          img.src = dataUrl;
+        });
+        const converted = parseDataUrl(pngDataUrl);
+        if (converted){
+          const dims = probeImageDimensions(converted.bytes, 'png');
+          return { ext:'png', mime:'image/png', bytes: converted.bytes, w: dims ? dims.w : 0, h: dims ? dims.h : 0 };
+        }
+      }catch(e){}
+    }
+    return null;
+  }
+
+  let _crcTable = null;
+  function crc32(bytes){
+    if (!_crcTable){
+      _crcTable = new Uint32Array(256);
+      for (let i = 0; i < 256; i++){
+        let c = i;
+        for (let k = 0; k < 8; k++){
+          c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        _crcTable[i] = c >>> 0;
+      }
+    }
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++){
+      crc = _crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  async function deflateRawBestEffort(bytes){
+    if (typeof CompressionStream === 'undefined' || bytes.length < 128) return null;
+    try{
+      const cs = new CompressionStream('deflate-raw');
+      const writer = cs.writable.getWriter();
+      writer.write(bytes);
+      writer.close();
+      const chunks = [];
+      const reader = cs.readable.getReader();
+      let total = 0;
+      while (true){
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        total += value.length;
+      }
+      if (total >= bytes.length) return null;
+      const out = new Uint8Array(total);
+      let off = 0;
+      for (const ch of chunks){ out.set(ch, off); off += ch.length; }
+      return out;
+    }catch(e){
+      return null;
+    }
+  }
+
+  async function buildZipUint8Array(entries){
+    const now = new Date();
+    const dosTime = ((now.getHours() & 0x1F) << 11) | ((now.getMinutes() & 0x3F) << 5) | ((now.getSeconds() >> 1) & 0x1F);
+    const dosDate = ((Math.max(1980, now.getFullYear()) - 1980) << 9) | ((now.getMonth() + 1) << 5) | (now.getDate() & 0x1F);
+
+    const prepared = [];
+    for (const ent of entries){
+      const raw = ArrayBuffer.isView(ent.data)
+        ? new Uint8Array(ent.data.buffer, ent.data.byteOffset, ent.data.byteLength)
+        : utf8Bytes(String(ent.data || ''));
+      const nameBytes = utf8Bytes(ent.name);
+      const crc = crc32(raw);
+      let payload = raw;
+      let method = 0; // Stored
+      if (ent.compress !== false){
+        const deflated = await deflateRawBestEffort(raw);
+        if (deflated){
+          payload = deflated;
+          method = 8; // Deflate
+        }
+      }
+      prepared.push({ nameBytes, rawLen: raw.length, payload, method, crc });
+    }
+
+    let localTotal = 0;
+    let centralTotal = 0;
+    for (const p of prepared){
+      p.offset = localTotal;
+      localTotal += 30 + p.nameBytes.length + p.payload.length;
+      centralTotal += 46 + p.nameBytes.length;
+    }
+    const out = new Uint8Array(localTotal + centralTotal + 22);
+    const dv = new DataView(out.buffer);
+
+    let pos = 0;
+    for (const p of prepared){
+      dv.setUint32(pos, 0x04034B50, true); // Local file header signature
+      dv.setUint16(pos + 4, 20, true);     // Version needed to extract (2.0)
+      dv.setUint16(pos + 6, 0x0800, true); // UTF-8 filename flag
+      dv.setUint16(pos + 8, p.method, true);
+      dv.setUint16(pos + 10, dosTime, true);
+      dv.setUint16(pos + 12, dosDate, true);
+      dv.setUint32(pos + 14, p.crc, true);
+      dv.setUint32(pos + 18, p.payload.length, true);
+      dv.setUint32(pos + 22, p.rawLen, true);
+      dv.setUint16(pos + 26, p.nameBytes.length, true);
+      dv.setUint16(pos + 28, 0, true);
+      out.set(p.nameBytes, pos + 30);
+      out.set(p.payload, pos + 30 + p.nameBytes.length);
+      pos += 30 + p.nameBytes.length + p.payload.length;
+    }
+
+    const centralOffset = pos;
+    for (const p of prepared){
+      dv.setUint32(pos, 0x02014B50, true); // Central directory header signature
+      dv.setUint16(pos + 4, 20, true);     // Version made by
+      dv.setUint16(pos + 6, 20, true);     // Version needed
+      dv.setUint16(pos + 8, 0x0800, true); // UTF-8 flag
+      dv.setUint16(pos + 10, p.method, true);
+      dv.setUint16(pos + 12, dosTime, true);
+      dv.setUint16(pos + 14, dosDate, true);
+      dv.setUint32(pos + 16, p.crc, true);
+      dv.setUint32(pos + 20, p.payload.length, true);
+      dv.setUint32(pos + 24, p.rawLen, true);
+      dv.setUint16(pos + 28, p.nameBytes.length, true);
+      dv.setUint16(pos + 30, 0, true);
+      dv.setUint16(pos + 32, 0, true);
+      dv.setUint16(pos + 34, 0, true);
+      dv.setUint16(pos + 36, 0, true);
+      dv.setUint32(pos + 38, 0, true);
+      dv.setUint32(pos + 42, p.offset, true);
+      out.set(p.nameBytes, pos + 46);
+      pos += 46 + p.nameBytes.length;
+    }
+
+    dv.setUint32(pos, 0x06054B50, true); // End of central directory signature
+    dv.setUint16(pos + 4, 0, true);
+    dv.setUint16(pos + 6, 0, true);
+    dv.setUint16(pos + 8, prepared.length, true);
+    dv.setUint16(pos + 10, prepared.length, true);
+    dv.setUint32(pos + 12, centralTotal, true);
+    dv.setUint32(pos + 16, centralOffset, true);
+    dv.setUint16(pos + 20, 0, true);
+    return out;
+  }
+
+  // ---------- OOXML Low-level XML Builders ----------
+  function docxRunPrXml(opts){
+    const o = opts || {};
+    const font = o.font || DOCX_FONT_SANS;
+    const sz = ptToHalfPt(o.sizePt || 10);
+    const parts = [];
+    if (o.rStyle) parts.push(`<w:rStyle w:val="${xmlEsc(o.rStyle)}"/>`);
+    parts.push(`<w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/>`);
+    if (o.bold) parts.push('<w:b/>');
+    if (o.italic) parts.push('<w:i/>');
+    if (o.strike) parts.push('<w:strike/>');
+    if (o.noProof) parts.push('<w:noProof/>');
+    if (o.color) parts.push(`<w:color w:val="${o.color}"/>`);
+    parts.push(`<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/>`);
+    if (o.underline) parts.push('<w:u w:val="single"/>');
+    if (o.codeBorder) parts.push(`<w:bdr w:val="single" w:sz="2" w:space="1" w:color="${rgbHex(PILL_BORDER)}"/>`);
+    if (o.codeShd) parts.push(`<w:shd w:val="clear" w:color="auto" w:fill="${rgbHex(PILL_BG)}"/>`);
+    return `<w:rPr>${parts.join('')}</w:rPr>`;
+  }
+
+  function docxTextRunXml(text, opts){
+    const rPr = docxRunPrXml(opts);
+    const clean = xmlSanitize(text || '');
+    const lines = clean.split('\n');
+    if (lines.length === 1){
+      return `<w:r>${rPr}<w:t xml:space="preserve">${xmlEsc(clean)}</w:t></w:r>`;
+    }
+    const segs = [];
+    lines.forEach((ln, idx)=>{
+      if (idx > 0) segs.push('<w:br/>');
+      if (ln.length > 0) segs.push(`<w:t xml:space="preserve">${xmlEsc(ln)}</w:t>`);
+    });
+    return `<w:r>${rPr}${segs.join('')}</w:r>`;
+  }
+
+  function docxInlineImageXml(rId, cxEmu, cyEmu, name, descr, drawingId){
+    const cx = Math.max(9525, Math.round(cxEmu));
+    const cy = Math.max(9525, Math.round(cyEmu));
+    const safeName = xmlEsc(name || ('Image_' + drawingId));
+    const safeDescr = xmlEsc(descr || safeName);
+    return `<w:drawing>` +
+      `<wp:inline distT="0" distB="0" distL="0" distR="0">` +
+        `<wp:extent cx="${cx}" cy="${cy}"/>` +
+        `<wp:effectExtent l="0" t="0" r="0" b="0"/>` +
+        `<wp:docPr id="${drawingId}" name="${safeName}" descr="${safeDescr}"/>` +
+        `<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>` +
+        `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
+          `<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+            `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+              `<pic:nvPicPr>` +
+                `<pic:cNvPr id="${drawingId}" name="${safeName}"/>` +
+                `<pic:cNvPicPr><a:picLocks noChangeAspect="1"/></pic:cNvPicPr>` +
+              `</pic:nvPicPr>` +
+              `<pic:blipFill>` +
+                `<a:blip r:embed="${rId}"/>` +
+                `<a:stretch><a:fillRect/></a:stretch>` +
+              `</pic:blipFill>` +
+              `<pic:spPr>` +
+                `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+                `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+              `</pic:spPr>` +
+            `</pic:pic>` +
+          `</a:graphicData>` +
+        `</a:graphic>` +
+      `</wp:inline>` +
+    `</w:drawing>`;
+  }
+
+  function docxParagraphXml(runsXml, opts){
+    const o = opts || {};
+    const pPr = [];
+    if (o.pStyle) pPr.push(`<w:pStyle w:val="${xmlEsc(o.pStyle)}"/>`);
+    if (o.keepNext) pPr.push('<w:keepNext/>');
+    if (o.keepLines) pPr.push('<w:keepLines/>');
+    if (o.pageBreakBefore) pPr.push('<w:pageBreakBefore/>');
+    if (o.widowControl !== false) pPr.push('<w:widowControl/>');
+    if (o.numId != null){
+      pPr.push(`<w:numPr><w:ilvl w:val="${Math.min(8, Math.max(0, o.ilvl || 0))}"/><w:numId w:val="${o.numId}"/></w:numPr>`);
+    }
+    if (o.pBdr){
+      const b = o.pBdr;
+      const bParts = [];
+      ['top','left','bottom','right'].forEach(side=>{
+        if (b[side]){
+          const s = b[side];
+          bParts.push(`<w:${side} w:val="${s.val || 'single'}" w:sz="${s.sz || 4}" w:space="${s.space != null ? s.space : 4}" w:color="${s.color || rgbHex(LINE)}"/>`);
+        }
+      });
+      if (bParts.length) pPr.push(`<w:pBdr>${bParts.join('')}</w:pBdr>`);
+    }
+    if (o.shd) pPr.push(`<w:shd w:val="clear" w:color="auto" w:fill="${o.shd}"/>`);
+    if (o.spacing){
+      const sp = o.spacing;
+      const attrs = [];
+      if (sp.before != null) attrs.push(`w:before="${Math.round(sp.before)}"`);
+      if (sp.after != null) attrs.push(`w:after="${Math.round(sp.after)}"`);
+      if (sp.line != null) attrs.push(`w:line="${Math.round(sp.line)}"`);
+      if (sp.lineRule) attrs.push(`w:lineRule="${sp.lineRule}"`);
+      if (attrs.length) pPr.push(`<w:spacing ${attrs.join(' ')}/>`);
+    }
+    if (o.ind){
+      const ind = o.ind;
+      const attrs = [];
+      if (ind.left != null) attrs.push(`w:left="${Math.round(ind.left)}"`);
+      if (ind.right != null) attrs.push(`w:right="${Math.round(ind.right)}"`);
+      if (ind.hanging != null) attrs.push(`w:hanging="${Math.round(ind.hanging)}"`);
+      if (ind.firstLine != null) attrs.push(`w:firstLine="${Math.round(ind.firstLine)}"`);
+      if (attrs.length) pPr.push(`<w:ind ${attrs.join(' ')}/>`);
+    }
+    if (o.align && o.align !== 'left'){
+      pPr.push(`<w:jc w:val="${o.align}"/>`);
+    }
+    if (o.outlineLvl != null){
+      pPr.push(`<w:outlineLvl w:val="${o.outlineLvl}"/>`);
+    }
+    if (o.pRPr){
+      pPr.push(docxRunPrXml(o.pRPr));
+    }
+    const pPrStr = pPr.length ? `<w:pPr>${pPr.join('')}</w:pPr>` : '';
+    return `<w:p>${pPrStr}${runsXml || ''}</w:p>`;
+  }
+
+  function docxTinySpacerParagraphXml(afterTwips){
+    const a = afterTwips != null ? Math.round(afterTwips) : 0;
+    return `<w:p><w:pPr><w:spacing w:before="0" w:after="${a}" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>`;
+  }
+
+  function docxBorderAttr(spec){
+    if (!spec || spec.val === 'none') return 'w:val="none" w:sz="0" w:space="0" w:color="auto"';
+    return `w:val="${spec.val || 'single'}" w:sz="${spec.sz || 4}" w:space="0" w:color="${spec.color || rgbHex(LINE)}"`;
+  }
+
+  function docxBordersXml(tag, b){
+    const sides = tag === 'w:tblBorders'
+      ? ['top','left','bottom','right','insideH','insideV']
+      : ['top','left','bottom','right'];
+    const inner = sides.map(s => `<w:${s} ${docxBorderAttr(b && b[s])}/>`).join('');
+    return `<${tag}>${inner}</${tag}>`;
+  }
+
+  function docxCellMarXml(tag, m){
+    if (!m) return '';
+    const sides = ['top','left','bottom','right'];
+    const inner = sides
+      .filter(s => m[s] != null)
+      .map(s => `<w:${s} w:w="${Math.round(m[s])}" w:type="dxa"/>`)
+      .join('');
+    return inner ? `<${tag}>${inner}</${tag}>` : '';
+  }
+
+  function docxRelsXml(rels){
+    const items = rels.map(r =>
+      `<Relationship Id="${xmlEsc(r.id)}" Type="${xmlEsc(r.type)}" Target="${xmlEsc(r.target)}"${r.external ? ' TargetMode="External"' : ''}/>`
+    ).join('');
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${items}</Relationships>`;
+  }
+
+  // ---------- OOXML Static Part Templates (styles, settings, numbering, props) ----------
+  function buildDocxStylesXml(){
+    const inkHex = rgbHex(INK);
+    const bodyHex = rgbHex(BODY_COLOR);
+    const mutedHex = rgbHex(MUTED);
+    const blueHex = rgbHex(BLUE);
+    const h1RuleHex = rgbHex(H1_RULE);
+
+    const headingDefs = [
+      { lvl: 1, sz: 15.2, color: inkHex, before: 220, after: 110, bottomRule: h1RuleHex },
+      { lvl: 2, sz: 13.0, color: inkHex, before: 190, after: 90 },
+      { lvl: 3, sz: 11.4, color: inkHex, before: 150, after: 75 },
+      { lvl: 4, sz: 10.4, color: inkHex, before: 120, after: 65 },
+      { lvl: 5, sz: 9.7,  color: mutedHex, before: 100, after: 55 },
+      { lvl: 6, sz: 9.3,  color: mutedHex, before: 90, after: 50 }
+    ];
+
+    const headingStyles = headingDefs.map(h => {
+      const bdr = h.bottomRule
+        ? `<w:pBdr><w:bottom w:val="single" w:sz="4" w:space="4" w:color="${h.bottomRule}"/></w:pBdr>`
+        : '';
+      const hp = ptToHalfPt(h.sz);
+      return `<w:style w:type="paragraph" w:styleId="Heading${h.lvl}">` +
+        `<w:name w:val="heading ${h.lvl}"/>` +
+        `<w:basedOn w:val="Normal"/>` +
+        `<w:next w:val="Normal"/>` +
+        `<w:qFormat/>` +
+        `<w:pPr><w:keepNext/><w:keepLines/>${bdr}<w:spacing w:before="${h.before}" w:after="${h.after}" w:line="288" w:lineRule="auto"/><w:outlineLvl w:val="${h.lvl - 1}"/></w:pPr>` +
+        `<w:rPr><w:rFonts w:ascii="${DOCX_FONT_SANS}" w:hAnsi="${DOCX_FONT_SANS}" w:cs="${DOCX_FONT_SANS}"/><w:b/><w:color w:val="${h.color}"/><w:sz w:val="${hp}"/><w:szCs w:val="${hp}"/></w:rPr>` +
+      `</w:style>`;
+    }).join('');
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w:docDefaults>` +
+          `<w:rPrDefault><w:rPr>` +
+            `<w:rFonts w:ascii="${DOCX_FONT_SANS}" w:hAnsi="${DOCX_FONT_SANS}" w:cs="${DOCX_FONT_SANS}"/>` +
+            `<w:color w:val="${bodyHex}"/>` +
+            `<w:sz w:val="20"/><w:szCs w:val="20"/>` +
+          `</w:rPr></w:rPrDefault>` +
+          `<w:pPrDefault><w:pPr>` +
+            `<w:spacing w:before="0" w:after="115" w:line="316" w:lineRule="auto"/>` +
+          `</w:pPr></w:pPrDefault>` +
+        `</w:docDefaults>` +
+        `<w:style w:type="paragraph" w:default="1" w:styleId="Normal">` +
+          `<w:name w:val="Normal"/>` +
+          `<w:qFormat/>` +
+        `</w:style>` +
+        headingStyles +
+        `<w:style w:type="character" w:styleId="Hyperlink">` +
+          `<w:name w:val="Hyperlink"/>` +
+          `<w:rPr><w:color w:val="${blueHex}"/><w:u w:val="single"/></w:rPr>` +
+        `</w:style>` +
+        `<w:style w:type="table" w:default="1" w:styleId="TableNormal">` +
+          `<w:name w:val="Normal Table"/>` +
+          `<w:tblPr><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr>` +
+        `</w:style>` +
+      `</w:styles>`;
+  }
+
+  function buildDocxSettingsXml(){
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w:defaultTabStop w:val="720"/>` +
+        `<w:updateFields w:val="true"/>` +
+        `<w:compat>` +
+          `<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>` +
+        `</w:compat>` +
+      `</w:settings>`;
+  }
+
+  function buildDocxNumberingXml(orderedNums){
+    const blueHex = rgbHex(BLUE);
+    const mutedHex = rgbHex(MUTED);
+    const bulletGlyphs = ['\u2022', '\u25E6', '\u25AA'];
+    const bulletColors = [blueHex, blueHex, mutedHex];
+
+    const bulletLvls = [];
+    const orderedLvls = [];
+    for (let ilvl = 0; ilvl < 9; ilvl++){
+      const left = (ilvl + 1) * 360;
+      const g = bulletGlyphs[ilvl % 3];
+      const col = bulletColors[ilvl % 3];
+      bulletLvls.push(
+        `<w:lvl w:ilvl="${ilvl}">` +
+          `<w:start w:val="1"/>` +
+          `<w:numFmt w:val="bullet"/>` +
+          `<w:lvlText w:val="${xmlEsc(g)}"/>` +
+          `<w:lvlJc w:val="left"/>` +
+          `<w:pPr><w:ind w:left="${left}" w:hanging="240"/></w:pPr>` +
+          `<w:rPr><w:rFonts w:ascii="${DOCX_FONT_SANS}" w:hAnsi="${DOCX_FONT_SANS}" w:cs="${DOCX_FONT_SANS}"/><w:color w:val="${col}"/></w:rPr>` +
+        `</w:lvl>`
+      );
+      orderedLvls.push(
+        `<w:lvl w:ilvl="${ilvl}">` +
+          `<w:start w:val="1"/>` +
+          `<w:numFmt w:val="decimal"/>` +
+          `<w:lvlText w:val="%${ilvl + 1}."/>` +
+          `<w:lvlJc w:val="left"/>` +
+          `<w:pPr><w:ind w:left="${left + 40}" w:hanging="280"/></w:pPr>` +
+          `<w:rPr><w:rFonts w:ascii="${DOCX_FONT_SANS}" w:hAnsi="${DOCX_FONT_SANS}" w:cs="${DOCX_FONT_SANS}"/><w:b/><w:color w:val="${blueHex}"/></w:rPr>` +
+        `</w:lvl>`
+      );
+    }
+
+    const nums = [
+      `<w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num>`
+    ];
+    for (const o of orderedNums){
+      nums.push(
+        `<w:num w:numId="${o.numId}">` +
+          `<w:abstractNumId w:val="2"/>` +
+          `<w:lvlOverride w:ilvl="${o.ilvl}"><w:startOverride w:val="${o.start}"/></w:lvlOverride>` +
+        `</w:num>`
+      );
+    }
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/>${bulletLvls.join('')}</w:abstractNum>` +
+        `<w:abstractNum w:abstractNumId="2"><w:multiLevelType w:val="hybridMultilevel"/>${orderedLvls.join('')}</w:abstractNum>` +
+        nums.join('') +
+      `</w:numbering>`;
+  }
+
+  function buildDocxHeaderEmptyXml(){
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+        docxTinySpacerParagraphXml(0) +
+      `</w:hdr>`;
+  }
+
+  function buildDocxContinuationHeaderXml(orientation, eyebrow, title, stepText){
+    const { w: PW } = pageSize(orientation);
+    const bodyW = mmToTwip(PW - MARGIN_X * 2);
+    const eyebrowTrim = (eyebrow || '').trim().toUpperCase();
+    const titleTrim = (title || '').trim();
+    const stepTrim = (stepText || '').trim();
+
+    const leftRuns = [];
+    if (eyebrowTrim){
+      leftRuns.push(docxTextRunXml(eyebrowTrim, { bold:true, sizePt:9.5, color: rgbHex(BLUE) }));
+    }
+    if (titleTrim){
+      const prefix = eyebrowTrim ? '  \u00B7  ' : '';
+      leftRuns.push(docxTextRunXml(prefix + titleTrim, { bold:true, sizePt:9.0, color: rgbHex(MUTED) }));
+    }
+    const leftP = docxParagraphXml(leftRuns.join(''), { spacing:{ before:0, after:0, line:240, lineRule:'auto' } });
+
+    const borderBottom = { bottom:{ val:'single', sz:4, color: rgbHex(LINE) } };
+    const mar = { top:0, left:0, bottom:90, right:0 };
+
+    let tblXml;
+    if (stepTrim){
+      const rightW = Math.min(2800, Math.round(bodyW * 0.28));
+      const leftW = bodyW - rightW;
+      const rightP = docxParagraphXml(
+        docxTextRunXml(stepTrim, { sizePt:8.5, color: rgbHex(MUTED) }),
+        { align:'right', spacing:{ before:0, after:0, line:240, lineRule:'auto' } }
+      );
+      tblXml =
+        `<w:tbl>` +
+          `<w:tblPr>` +
+            `<w:tblW w:w="${bodyW}" w:type="dxa"/>` +
+            docxBordersXml('w:tblBorders', borderBottom) +
+            `<w:tblLayout w:type="fixed"/>` +
+            docxCellMarXml('w:tblCellMar', mar) +
+          `</w:tblPr>` +
+          `<w:tblGrid><w:gridCol w:w="${leftW}"/><w:gridCol w:w="${rightW}"/></w:tblGrid>` +
+          `<w:tr>` +
+            `<w:trPr><w:cantSplit/></w:trPr>` +
+            `<w:tc><w:tcPr><w:tcW w:w="${leftW}" w:type="dxa"/><w:vAlign w:val="bottom"/></w:tcPr>${leftP}</w:tc>` +
+            `<w:tc><w:tcPr><w:tcW w:w="${rightW}" w:type="dxa"/><w:vAlign w:val="bottom"/></w:tcPr>${rightP}</w:tc>` +
+          `</w:tr>` +
+        `</w:tbl>`;
+    } else {
+      tblXml =
+        `<w:tbl>` +
+          `<w:tblPr>` +
+            `<w:tblW w:w="${bodyW}" w:type="dxa"/>` +
+            docxBordersXml('w:tblBorders', borderBottom) +
+            `<w:tblLayout w:type="fixed"/>` +
+            docxCellMarXml('w:tblCellMar', mar) +
+          `</w:tblPr>` +
+          `<w:tblGrid><w:gridCol w:w="${bodyW}"/></w:tblGrid>` +
+          `<w:tr>` +
+            `<w:trPr><w:cantSplit/></w:trPr>` +
+            `<w:tc><w:tcPr><w:tcW w:w="${bodyW}" w:type="dxa"/><w:vAlign w:val="bottom"/></w:tcPr>${leftP}</w:tc>` +
+          `</w:tr>` +
+        `</w:tbl>`;
+    }
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+        tblXml +
+        docxTinySpacerParagraphXml(0) +
+      `</w:hdr>`;
+  }
+
+  function buildDocxFooterXml(orientation, logoRelId, docCode, docTitle, totalPages, drawingId){
+    const { w: PW } = pageSize(orientation);
+    const bodyW = mmToTwip(PW - MARGIN_X * 2);
+    const rightW = 2200;
+    const leftW = bodyW - rightW;
+
+    const logoEmu = mmToEmu(4.6);
+    const logoRun = logoRelId
+      ? `<w:r>${docxInlineImageXml(logoRelId, logoEmu, logoEmu, 'ADPL_Logo', 'ADPL Logo', drawingId)}</w:r>` +
+        docxTextRunXml('  ', { sizePt:8.2 })
+      : '';
+    const brandText = `${docCode} | ${docTitle}`;
+    const leftP = docxParagraphXml(
+      logoRun + docxTextRunXml(brandText, { bold:true, sizePt:8.2, color: rgbHex(INK) }),
+      { spacing:{ before:0, after:0, line:240, lineRule:'auto' } }
+    );
+
+    const mutedRPr = docxRunPrXml({ sizePt:8.2, color: rgbHex(MUTED) });
+    const fld = (instr, fallback)=>
+      `<w:r>${mutedRPr}<w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r>${mutedRPr}<w:instrText xml:space="preserve"> ${instr} </w:instrText></w:r>` +
+      `<w:r>${mutedRPr}<w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r>${mutedRPr}<w:t>${xmlEsc(String(fallback))}</w:t></w:r>` +
+      `<w:r>${mutedRPr}<w:fldChar w:fldCharType="end"/></w:r>`;
+
+    const rightRuns =
+      `<w:r>${mutedRPr}<w:t xml:space="preserve">Page </w:t></w:r>` +
+      fld('PAGE', 1) +
+      `<w:r>${mutedRPr}<w:t xml:space="preserve"> of </w:t></w:r>` +
+      fld('NUMPAGES', totalPages || 1);
+
+    const rightP = docxParagraphXml(rightRuns, {
+      align:'right',
+      spacing:{ before:0, after:0, line:240, lineRule:'auto' }
+    });
+
+    const tblXml =
+      `<w:tbl>` +
+        `<w:tblPr>` +
+          `<w:tblW w:w="${bodyW}" w:type="dxa"/>` +
+          docxBordersXml('w:tblBorders', { top:{ val:'single', sz:4, color: rgbHex(LINE) } }) +
+          `<w:tblLayout w:type="fixed"/>` +
+          docxCellMarXml('w:tblCellMar', { top:110, left:0, bottom:0, right:0 }) +
+        `</w:tblPr>` +
+        `<w:tblGrid><w:gridCol w:w="${leftW}"/><w:gridCol w:w="${rightW}"/></w:tblGrid>` +
+        `<w:tr>` +
+          `<w:trPr><w:cantSplit/></w:trPr>` +
+          `<w:tc><w:tcPr><w:tcW w:w="${leftW}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${leftP}</w:tc>` +
+          `<w:tc><w:tcPr><w:tcW w:w="${rightW}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${rightP}</w:tc>` +
+        `</w:tr>` +
+      `</w:tbl>`;
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
+             `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ` +
+             `xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ` +
+             `xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ` +
+             `xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+        tblXml +
+        docxTinySpacerParagraphXml(0) +
+      `</w:ftr>`;
+  }
+
+  // ---------- Inline Runs -> OOXML Runs / Hyperlinks ----------
+  function buildDocxInlineRunsXml(runs, opts, pkg){
+    const baseSizePt = (opts && opts.sizePt) || 10.2;
+    const defaultColor = (opts && opts.color) || BODY_COLOR;
+    const parts = [];
+
+    let i = 0;
+    while (i < runs.length){
+      const run = runs[i];
+      if (!run){ i++; continue; }
+      if (run.br){
+        parts.push('<w:r><w:br/></w:r>');
+        i++;
+        continue;
+      }
+      if (!run.text){ i++; continue; }
+
+      const href = run.link ? normalizeDocxHref(run.link) : '';
+      if (href){
+        const rId = pkg.addHyperlinkRel(href);
+        const linkRuns = [];
+        while (i < runs.length && runs[i] && !runs[i].br && normalizeDocxHref(runs[i].link) === href){
+          const lr = runs[i];
+          if (lr.text){
+            const isCode = !!lr.code;
+            linkRuns.push(docxTextRunXml(lr.text, {
+              font: isCode ? DOCX_FONT_MONO : DOCX_FONT_SANS,
+              sizePt: isCode ? baseSizePt * 0.88 : baseSizePt,
+              bold: !!lr.bold,
+              italic: !!lr.italic && !isCode,
+              strike: !!lr.strike,
+              underline: true,
+              noProof: isCode,
+              color: rgbHex(lr.color || BLUE),
+              codeBorder: isCode,
+              codeShd: isCode
+            }));
+          }
+          i++;
+        }
+        if (linkRuns.length){
+          parts.push(`<w:hyperlink r:id="${rId}" w:history="1">${linkRuns.join('')}</w:hyperlink>`);
+        }
+        continue;
+      }
+
+      const isCode = !!run.code;
+      const colorArr = run.color || (isCode ? CODE_INK : defaultColor);
+      parts.push(docxTextRunXml(run.text, {
+        font: isCode ? DOCX_FONT_MONO : DOCX_FONT_SANS,
+        sizePt: isCode ? baseSizePt * 0.88 : baseSizePt,
+        bold: !!run.bold,
+        italic: !!run.italic && !isCode,
+        strike: !!run.strike,
+        underline: !!run.underline,
+        noProof: isCode,
+        color: rgbHex(colorArr),
+        codeBorder: isCode,
+        codeShd: isCode
+      }));
+      i++;
+    }
+    return parts.join('');
+  }
+
+  // ---------- Card Header Blocks (Screenshot & Text Pages) ----------
+  function buildDocxCardHeaderBlocks(p, stepText, bodyWTwips){
+    const blocks = [];
+    const eyebrowTrim = (p.eyebrow || '').trim().toUpperCase();
+    const titleTrim = (p.title || '').trim();
+    const stepTrim = (stepText || '').trim();
+
+    if (eyebrowTrim && stepTrim){
+      const rightW = Math.min(2800, Math.round(bodyWTwips * 0.28));
+      const leftW = bodyWTwips - rightW;
+      const leftP = docxParagraphXml(
+        docxTextRunXml(eyebrowTrim, { bold:true, sizePt:10, color: rgbHex(BLUE) }),
+        { keepNext:true, spacing:{ before:0, after:0, line:240, lineRule:'auto' } }
+      );
+      const rightP = docxParagraphXml(
+        docxTextRunXml(stepTrim, { sizePt:8.5, color: rgbHex(MUTED) }),
+        { align:'right', keepNext:true, spacing:{ before:0, after:0, line:240, lineRule:'auto' } }
+      );
+      const tbl =
+        `<w:tbl>` +
+          `<w:tblPr>` +
+            `<w:tblW w:w="${bodyWTwips}" w:type="dxa"/>` +
+            docxBordersXml('w:tblBorders', {}) +
+            `<w:tblLayout w:type="fixed"/>` +
+            docxCellMarXml('w:tblCellMar', { top:0, left:0, bottom:50, right:0 }) +
+          `</w:tblPr>` +
+          `<w:tblGrid><w:gridCol w:w="${leftW}"/><w:gridCol w:w="${rightW}"/></w:tblGrid>` +
+          `<w:tr>` +
+            `<w:trPr><w:cantSplit/></w:trPr>` +
+            `<w:tc><w:tcPr><w:tcW w:w="${leftW}" w:type="dxa"/><w:vAlign w:val="bottom"/></w:tcPr>${leftP}</w:tc>` +
+            `<w:tc><w:tcPr><w:tcW w:w="${rightW}" w:type="dxa"/><w:vAlign w:val="bottom"/></w:tcPr>${rightP}</w:tc>` +
+          `</w:tr>` +
+        `</w:tbl>`;
+      blocks.push({ kind:'tbl', xml: tbl });
+    } else if (eyebrowTrim){
+      blocks.push({
+        kind:'p',
+        xml: docxParagraphXml(
+          docxTextRunXml(eyebrowTrim, { bold:true, sizePt:10, color: rgbHex(BLUE) }),
+          { keepNext:true, spacing:{ before:0, after:50, line:240, lineRule:'auto' } }
+        )
+      });
+    } else if (stepTrim){
+      blocks.push({
+        kind:'p',
+        xml: docxParagraphXml(
+          docxTextRunXml(stepTrim, { sizePt:8.5, color: rgbHex(MUTED) }),
+          { align:'right', keepNext:true, spacing:{ before:0, after:50, line:240, lineRule:'auto' } }
+        )
+      });
+    }
+
+    if (titleTrim){
+      blocks.push({
+        kind:'p',
+        xml: docxParagraphXml(
+          docxTextRunXml(titleTrim, { bold:true, sizePt:16.5, color: rgbHex(INK) }),
+          {
+            keepNext:true,
+            keepLines:true,
+            pBdr:{ bottom:{ val:'single', sz:4, space:7, color: rgbHex(LINE) } },
+            spacing:{ before:30, after:180, line:276, lineRule:'auto' }
+          }
+        )
+      });
+    } else {
+      blocks.push({
+        kind:'p',
+        xml: docxParagraphXml('', {
+          pBdr:{ bottom:{ val:'single', sz:4, space:4, color: rgbHex(LINE) } },
+          spacing:{ before:0, after:140, line:40, lineRule:'exact' }
+        })
+      });
+    }
+
+    return blocks;
+  }
+
+  // ---------- Markdown AST -> Native OOXML Blocks ----------
+  function computeDocxTableColTwips(doc, headerCells, bodyRows, colCount, availWTwips, cellPt){
+    const availMm = availWTwips * 25.4 / 1440;
+    const cellPadX = colCount >= 6 ? 1.7 : 2.4;
+    const natW = new Array(colCount).fill(8);
+    const minW = new Array(colCount).fill(Math.min(14, availMm / colCount));
+
+    const inspectCell = (cell, cIdx, isHead)=>{
+      const inl = (cell && cell.tokens && cell.tokens.length)
+        ? cell.tokens
+        : fallbackInlineTokens((cell && cell.text) || '');
+      const runs = extractInlineRuns(inl, { bold: isHead, color: isHead ? INK : BODY_COLOR });
+      const unwrapped = wrapInlineRuns(doc, runs, 1000, { sizePt: cellPt, color: isHead ? INK : BODY_COLOR });
+      let maxLine = 0, maxWord = 0;
+      for (const ln of unwrapped){
+        if (ln.width > maxLine) maxLine = ln.width;
+        for (const it of ln.items){
+          if (!it.isSpace && it.width > maxWord) maxWord = it.width;
+        }
+      }
+      const pad = cellPadX * 2 + 1.0;
+      natW[cIdx] = Math.max(natW[cIdx], maxLine + pad);
+      minW[cIdx] = Math.max(minW[cIdx], Math.min(maxWord + pad, availMm * 0.36));
+    };
+
+    for (let c = 0; c < colCount; c++) inspectCell(headerCells[c], c, true);
+    for (const row of bodyRows){
+      for (let c = 0; c < colCount; c++) inspectCell(row && row[c], c, false);
+    }
+
+    const colMm = new Array(colCount);
+    const sumNat = natW.reduce((a, v)=> a + v, 0) || 1;
+    const sumMin = minW.reduce((a, v)=> a + v, 0) || 1;
+
+    if (sumNat <= availMm){
+      const extra = availMm - sumNat;
+      for (let c = 0; c < colCount; c++){
+        colMm[c] = natW[c] + extra * (natW[c] / sumNat);
+      }
+    } else if (sumMin >= availMm){
+      for (let c = 0; c < colCount; c++){
+        colMm[c] = availMm * (minW[c] / sumMin);
+      }
+    } else {
+      const rem = availMm - sumMin;
+      const weights = natW.map((nw, c)=> Math.sqrt(Math.max(0.5, nw - minW[c])));
+      const sumWeights = weights.reduce((a, v)=> a + v, 0) || 1;
+      for (let c = 0; c < colCount; c++){
+        colMm[c] = minW[c] + rem * (weights[c] / sumWeights);
+      }
+    }
+
+    const colTwips = colMm.map(m => Math.max(400, mmToTwip(m)));
+    const curSum = colTwips.reduce((a, v)=> a + v, 0);
+    if (curSum !== availWTwips){
+      const scale = availWTwips / curSum;
+      let acc = 0;
+      for (let c = 0; c < colCount - 1; c++){
+        colTwips[c] = Math.max(360, Math.round(colTwips[c] * scale));
+        acc += colTwips[c];
+      }
+      colTwips[colCount - 1] = Math.max(360, availWTwips - acc);
+    }
+    return colTwips;
+  }
+
+  function pushDocxBlock(target, block){
+    if (!block) return;
+    // Word merges directly adjacent <w:tbl> elements unless separated by a <w:p>
+    if (block.kind === 'tbl' && target.length > 0 && target[target.length - 1].kind === 'tbl'){
+      target.push({ kind:'p', xml: docxTinySpacerParagraphXml(80) });
+    }
+    target.push(block);
+  }
+
+  function renderMarkdownAstToDocxBlocks(ast, rCtx, pkg){
+    const out = [];
+    const doc = getMeasureDoc();
+    const listDepth = rCtx.listDepth || 0;
+    const inQuote = !!rCtx.inQuote;
+    const tightList = !!rCtx.tightList;
+    const indentLeftTwips = rCtx.indentLeftTwips || 0;
+    const availWTwips = Math.max(2400, rCtx.availWTwips);
+
+    if (!Array.isArray(ast)) return out;
+
+    for (let bi = 0; bi < ast.length; bi++){
+      const b = ast[bi];
+      if (!b || b.type === 'space') continue;
+
+      if (b.type === 'pagebreak'){
+        if (rCtx.hasContent || out.length > 0){
+          pushDocxBlock(out, {
+            kind:'p',
+            xml: '<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>'
+          });
+        }
+        continue;
+      }
+
+      if (b.type === 'heading'){
+        const depth = Math.min(6, Math.max(1, b.depth || 1));
+        const sizeMap = { 1:15.2, 2:13.0, 3:11.4, 4:10.4, 5:9.7, 6:9.3 };
+        const hPt = sizeMap[depth] || 10.4;
+        const hColor = depth >= 5 ? MUTED : INK;
+        const inlineTokens = (b.tokens && b.tokens.length) ? b.tokens : fallbackInlineTokens(b.text || '');
+        const runs = extractInlineRuns(inlineTokens, { bold:true, color: hColor });
+        const runsXml = buildDocxInlineRunsXml(runs, { sizePt: hPt, color: hColor }, pkg);
+        const pOpts = {
+          pStyle: `Heading${depth}`,
+          keepNext: true,
+          keepLines: true,
+          outlineLvl: depth - 1
+        };
+        if (indentLeftTwips > 0) pOpts.ind = { left: indentLeftTwips };
+        pushDocxBlock(out, { kind:'p', xml: docxParagraphXml(runsXml, pOpts) });
+        continue;
+      }
+
+      if (b.type === 'paragraph' || b.type === 'text'){
+        const defaultColor = inQuote ? MUTED : BODY_COLOR;
+        const inlineTokens = (b.tokens && b.tokens.length) ? b.tokens : fallbackInlineTokens(b.text || '');
+        const runs = extractInlineRuns(inlineTokens, { italic: inQuote, color: defaultColor });
+        const runsXml = buildDocxInlineRunsXml(runs, { sizePt: 10.2, color: defaultColor }, pkg);
+        if (!runsXml) continue;
+        const pOpts = {
+          spacing:{ before:0, after: tightList ? 60 : (inQuote ? 90 : 120), line:316, lineRule:'auto' }
+        };
+        if (indentLeftTwips > 0) pOpts.ind = { left: indentLeftTwips };
+        pushDocxBlock(out, { kind:'p', xml: docxParagraphXml(runsXml, pOpts) });
+        continue;
+      }
+
+      if (b.type === 'list'){
+        const ordered = !!b.ordered;
+        const startNum = (ordered && typeof b.start === 'number' && !isNaN(b.start)) ? b.start : 1;
+        const ilvl = Math.min(8, listDepth);
+        const listNumId = ordered ? pkg.allocOrderedNumId(startNum, ilvl) : 1;
+        const items = b.items || [];
+
+        items.forEach((item)=>{
+          const isTask = !!item.task;
+          const childTokens = (item.tokens || []).filter(t => t && t.type !== 'space' && t.type !== 'checkbox');
+          const defaultColor = inQuote ? MUTED : BODY_COLOR;
+
+          const makeItemParagraph = (runsXml)=>{
+            if (isTask){
+              const glyph = item.checked ? '\u2611  ' : '\u2610  ';
+              const glyphColor = item.checked ? rgbHex(BLUE) : '94A3B8';
+              const boxRun = docxTextRunXml(glyph, { bold: !!item.checked, sizePt:10.2, color: glyphColor });
+              const left = (ilvl + 1) * 360;
+              return docxParagraphXml(boxRun + (runsXml || ''), {
+                ind:{ left, hanging:240 },
+                spacing:{ before:0, after: item.loose ? 90 : 55, line:312, lineRule:'auto' }
+              });
+            }
+            return docxParagraphXml(runsXml || '', {
+              numId: listNumId,
+              ilvl,
+              spacing:{ before:0, after: item.loose ? 90 : 55, line:312, lineRule:'auto' }
+            });
+          };
+
+          if (childTokens.length === 0){
+            pushDocxBlock(out, { kind:'p', xml: makeItemParagraph('') });
+            return;
+          }
+
+          const firstTok = childTokens[0];
+          let restStart = 0;
+          if (firstTok.type === 'text' || firstTok.type === 'paragraph'){
+            restStart = 1;
+            const inl = (firstTok.tokens && firstTok.tokens.length)
+              ? firstTok.tokens
+              : fallbackInlineTokens(firstTok.text || '');
+            const runs = extractInlineRuns(inl, { italic: inQuote, color: defaultColor });
+            const runsXml = buildDocxInlineRunsXml(runs, { sizePt: 10.2, color: defaultColor }, pkg);
+            pushDocxBlock(out, { kind:'p', xml: makeItemParagraph(runsXml) });
+          } else {
+            // Item begins directly with a nested block (e.g. code/table/quote)
+            pushDocxBlock(out, { kind:'p', xml: makeItemParagraph('') });
+          }
+
+          if (restStart < childTokens.length){
+            const subIndent = (ilvl + 1) * 360;
+            const subBlocks = renderMarkdownAstToDocxBlocks(childTokens.slice(restStart), {
+              listDepth: listDepth + 1,
+              inQuote,
+              tightList: !item.loose,
+              indentLeftTwips: subIndent,
+              availWTwips: Math.max(2400, availWTwips - 360),
+              hasContent: true
+            }, pkg);
+            subBlocks.forEach(sb => pushDocxBlock(out, sb));
+          }
+        });
+
+        // Subtle spacing after top-level list
+        if (listDepth === 0 && out.length > 0 && out[out.length - 1].kind === 'p'){
+          out[out.length - 1].xml = out[out.length - 1].xml.replace(/w:after="(?:55|90)"/, 'w:after="130"');
+        }
+        continue;
+      }
+
+      if (b.type === 'blockquote'){
+        const innerTokens = (b.tokens && b.tokens.length)
+          ? b.tokens
+          : [{ type:'paragraph', text: b.text || '', tokens: fallbackInlineTokens(b.text || '') }];
+        const qTblW = Math.max(2400, availWTwips);
+        const innerBlocks = renderMarkdownAstToDocxBlocks(innerTokens, {
+          listDepth,
+          inQuote: true,
+          tightList: false,
+          indentLeftTwips: 0,
+          availWTwips: Math.max(2000, qTblW - 340),
+          hasContent: true
+        }, pkg);
+        // Trim extra bottom spacing on the very last paragraph inside the quote box
+        if (innerBlocks.length > 0 && innerBlocks[innerBlocks.length - 1].kind === 'p'){
+          innerBlocks[innerBlocks.length - 1].xml = innerBlocks[innerBlocks.length - 1].xml.replace(/w:after="\d+"/, 'w:after="0"');
+        }
+        if (innerBlocks.length === 0 || innerBlocks[innerBlocks.length - 1].kind !== 'p'){
+          innerBlocks.push({ kind:'p', xml: docxTinySpacerParagraphXml(0) });
+        }
+        const tblIndXml = indentLeftTwips > 0 ? `<w:tblInd w:w="${indentLeftTwips}" w:type="dxa"/>` : '';
+        const qTbl =
+          `<w:tbl>` +
+            `<w:tblPr>` +
+              `<w:tblW w:w="${qTblW}" w:type="dxa"/>` +
+              tblIndXml +
+              docxBordersXml('w:tblBorders', { left:{ val:'single', sz:24, color: rgbHex(BLUE) } }) +
+              `<w:tblLayout w:type="fixed"/>` +
+              docxCellMarXml('w:tblCellMar', { top:100, left:180, bottom:100, right:140 }) +
+            `</w:tblPr>` +
+            `<w:tblGrid><w:gridCol w:w="${qTblW}"/></w:tblGrid>` +
+            `<w:tr>` +
+              `<w:tc>` +
+                `<w:tcPr><w:tcW w:w="${qTblW}" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="${rgbHex(QUOTE_BG)}"/></w:tcPr>` +
+                innerBlocks.map(ib => ib.xml).join('') +
+              `</w:tc>` +
+            `</w:tr>` +
+          `</w:tbl>`;
+        pushDocxBlock(out, { kind:'tbl', xml: qTbl });
+        pushDocxBlock(out, { kind:'p', xml: docxTinySpacerParagraphXml(110) });
+        continue;
+      }
+
+      if (b.type === 'code'){
+        const rawCodeLines = String(b.text || '').replace(/\r\n?/g, '\n').split('\n');
+        if (rawCodeLines.length > 1 && rawCodeLines[rawCodeLines.length - 1] === '') rawCodeLines.pop();
+        if (rawCodeLines.length === 0) rawCodeLines.push('');
+
+        const cellPs = [];
+        const langLabel = String(b.lang || '').trim().slice(0, 20);
+        if (langLabel){
+          cellPs.push(docxParagraphXml(
+            docxTextRunXml(langLabel, { bold:true, sizePt:7.5, color: rgbHex(MUTED), noProof:true }),
+            { align:'right', spacing:{ before:0, after:50, line:220, lineRule:'auto' } }
+          ));
+        }
+        rawCodeLines.forEach((rawLn)=>{
+          const expanded = expandTabs(rawLn, 4);
+          const runXml = expanded.length > 0
+            ? docxTextRunXml(expanded, { font: DOCX_FONT_MONO, sizePt:8.5, color: rgbHex(CODE_INK), noProof:true })
+            : docxTextRunXml(' ', { font: DOCX_FONT_MONO, sizePt:8.5, color: rgbHex(CODE_INK), noProof:true });
+          cellPs.push(docxParagraphXml(runXml, {
+            widowControl: false,
+            spacing:{ before:0, after:0, line:264, lineRule:'auto' }
+          }));
+        });
+
+        const codeTblW = Math.max(2400, availWTwips);
+        const tblIndXml = indentLeftTwips > 0 ? `<w:tblInd w:w="${indentLeftTwips}" w:type="dxa"/>` : '';
+        const boxBdr = { val:'single', sz:4, color: rgbHex(BOX_BORDER) };
+        const cantSplit = rawCodeLines.length <= 14 ? '<w:trPr><w:cantSplit/></w:trPr>' : '';
+        const codeTbl =
+          `<w:tbl>` +
+            `<w:tblPr>` +
+              `<w:tblW w:w="${codeTblW}" w:type="dxa"/>` +
+              tblIndXml +
+              docxBordersXml('w:tblBorders', { top:boxBdr, left:boxBdr, bottom:boxBdr, right:boxBdr }) +
+              `<w:tblLayout w:type="fixed"/>` +
+              docxCellMarXml('w:tblCellMar', { top:110, left:160, bottom:110, right:160 }) +
+            `</w:tblPr>` +
+            `<w:tblGrid><w:gridCol w:w="${codeTblW}"/></w:tblGrid>` +
+            `<w:tr>` +
+              cantSplit +
+              `<w:tc>` +
+                `<w:tcPr><w:tcW w:w="${codeTblW}" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="${rgbHex(CODE_BG)}"/></w:tcPr>` +
+                cellPs.join('') +
+              `</w:tc>` +
+            `</w:tr>` +
+          `</w:tbl>`;
+        pushDocxBlock(out, { kind:'tbl', xml: codeTbl });
+        pushDocxBlock(out, { kind:'p', xml: docxTinySpacerParagraphXml(110) });
+        continue;
+      }
+
+      if (b.type === 'table'){
+        const headerCells = b.header || [];
+        const bodyRows = b.rows || [];
+        const colCount = Math.max(
+          headerCells.length,
+          bodyRows.reduce((mx, r)=> Math.max(mx, (r || []).length), 0)
+        );
+        if (colCount === 0) continue;
+
+        const cellPt = colCount >= 7 ? 7.8 : colCount >= 5 ? 8.6 : 9.2;
+        const aligns = b.align || [];
+        const tblW = Math.max(2400, availWTwips);
+        const colTwips = computeDocxTableColTwips(doc, headerCells, bodyRows, colCount, tblW, cellPt);
+        const padX = colCount >= 6 ? 75 : 115;
+        const padY = 85;
+
+        const lineBdr = { val:'single', sz:4, color: rgbHex(LINE) };
+        const headBotBdr = { val:'single', sz:8, color: rgbHex(TABLE_HEAD_BORDER) };
+        const headBgHex = rgbHex(TABLE_HEAD_BG);
+        const altBgHex = rgbHex(TABLE_ALT_BG);
+        const whiteHex = rgbHex(WHITE);
+
+        const buildCellXml = (cell, cIdx, isHead, bgHex)=>{
+          const inl = (cell && cell.tokens && cell.tokens.length)
+            ? cell.tokens
+            : fallbackInlineTokens((cell && cell.text) || '');
+          const baseColor = isHead ? INK : BODY_COLOR;
+          const runs = extractInlineRuns(inl, { bold: isHead, color: baseColor });
+          const runsXml = buildDocxInlineRunsXml(runs, { sizePt: cellPt, color: baseColor }, pkg);
+          const colAlign = aligns[cIdx] === 'center' ? 'center' : aligns[cIdx] === 'right' ? 'right' : 'left';
+          const pXml = docxParagraphXml(runsXml, {
+            align: colAlign,
+            spacing:{ before:0, after:0, line:276, lineRule:'auto' }
+          });
+          const tcBdr = isHead
+            ? `<w:tcBorders><w:bottom ${docxBorderAttr(headBotBdr)}/></w:tcBorders>`
+            : '';
+          return `<w:tc>` +
+            `<w:tcPr><w:tcW w:w="${colTwips[cIdx]}" w:type="dxa"/>${tcBdr}<w:shd w:val="clear" w:color="auto" w:fill="${bgHex}"/><w:vAlign w:val="center"/></w:tcPr>` +
+            pXml +
+          `</w:tc>`;
+        };
+
+        const rowsXml = [];
+        // Header row (repeats across page breaks via w:tblHeader)
+        const headCellsXml = [];
+        for (let c = 0; c < colCount; c++){
+          headCellsXml.push(buildCellXml(headerCells[c], c, true, headBgHex));
+        }
+        rowsXml.push(`<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>${headCellsXml.join('')}</w:tr>`);
+
+        // Body rows
+        bodyRows.forEach((row, rIdx)=>{
+          const bgHex = (rIdx % 2 === 1) ? altBgHex : whiteHex;
+          let maxCellChars = 0;
+          const rowCellsXml = [];
+          for (let c = 0; c < colCount; c++){
+            const cell = row && row[c];
+            if (cell && cell.text && cell.text.length > maxCellChars) maxCellChars = cell.text.length;
+            rowCellsXml.push(buildCellXml(cell, c, false, bgHex));
+          }
+          const trPr = maxCellChars < 700 ? '<w:trPr><w:cantSplit/></w:trPr>' : '';
+          rowsXml.push(`<w:tr>${trPr}${rowCellsXml.join('')}</w:tr>`);
+        });
+
+        const gridCols = colTwips.map(w => `<w:gridCol w:w="${w}"/>`).join('');
+        const tblIndXml = indentLeftTwips > 0 ? `<w:tblInd w:w="${indentLeftTwips}" w:type="dxa"/>` : '';
+        const mdTbl =
+          `<w:tbl>` +
+            `<w:tblPr>` +
+              `<w:tblW w:w="${tblW}" w:type="dxa"/>` +
+              tblIndXml +
+              docxBordersXml('w:tblBorders', {
+                top:lineBdr, left:lineBdr, bottom:lineBdr, right:lineBdr, insideH:lineBdr, insideV:lineBdr
+              }) +
+              `<w:tblLayout w:type="fixed"/>` +
+              docxCellMarXml('w:tblCellMar', { top:padY, left:padX, bottom:padY, right:padX }) +
+            `</w:tblPr>` +
+            `<w:tblGrid>${gridCols}</w:tblGrid>` +
+            rowsXml.join('') +
+          `</w:tbl>`;
+        pushDocxBlock(out, { kind:'tbl', xml: mdTbl });
+        pushDocxBlock(out, { kind:'p', xml: docxTinySpacerParagraphXml(120) });
+        continue;
+      }
+
+      if (b.type === 'hr'){
+        pushDocxBlock(out, {
+          kind:'p',
+          xml: docxParagraphXml('', {
+            pBdr:{ bottom:{ val:'single', sz:6, space:1, color: rgbHex(LINE) } },
+            spacing:{ before:100, after:140, line:40, lineRule:'exact' }
+          })
+        });
+        continue;
+      }
+
+      if (b.type === 'html'){
+        const raw = String(b.text || b.raw || '').trim();
+        if (PAGEBREAK_RE.test(raw)){
+          if (rCtx.hasContent || out.length > 0){
+            pushDocxBlock(out, {
+              kind:'p',
+              xml: '<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>'
+            });
+          }
+        } else if (/^<hr\s*\/?>$/i.test(raw)){
+          pushDocxBlock(out, {
+            kind:'p',
+            xml: docxParagraphXml('', {
+              pBdr:{ bottom:{ val:'single', sz:6, space:1, color: rgbHex(LINE) } },
+              spacing:{ before:100, after:140, line:40, lineRule:'exact' }
+            })
+          });
+        } else if (/^<br\s*\/?>$/i.test(raw)){
+          pushDocxBlock(out, { kind:'p', xml: docxTinySpacerParagraphXml(120) });
+        } else if (!/^<!--[\s\S]*-->$/.test(raw)){
+          const stripped = cleanControlChars(decodeEntities(raw.replace(/<[^>]+>/g, ' '))).replace(/\s+/g, ' ').trim();
+          if (stripped){
+            const sub = renderMarkdownAstToDocxBlocks(
+              [{ type:'paragraph', text: stripped, tokens:[{ type:'text', text: stripped }] }],
+              Object.assign({}, rCtx, { hasContent: true }),
+              pkg
+            );
+            sub.forEach(sb => pushDocxBlock(out, sb));
+          }
+        }
+        continue;
+      }
+    }
+
+    return out;
+  }
+
+  // ---------- Section Assembly & Full DOCX Package Builder ----------
+  function buildSectPrXml(spec){
+    const parts = [];
+    if (spec.headerDefaultRId){
+      parts.push(`<w:headerReference w:type="default" r:id="${spec.headerDefaultRId}"/>`);
+    }
+    if (spec.hasTitlePg && spec.headerFirstRId){
+      parts.push(`<w:headerReference w:type="first" r:id="${spec.headerFirstRId}"/>`);
+    }
+    if (spec.footerDefaultRId){
+      parts.push(`<w:footerReference w:type="default" r:id="${spec.footerDefaultRId}"/>`);
+    }
+    if (spec.hasTitlePg && spec.footerFirstRId){
+      parts.push(`<w:footerReference w:type="first" r:id="${spec.footerFirstRId}"/>`);
+    }
+    if (spec.nextPage){
+      parts.push('<w:type w:val="nextPage"/>');
+    }
+    if (spec.orientation === 'landscape'){
+      parts.push('<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>');
+    } else {
+      parts.push('<w:pgSz w:w="12240" w:h="15840"/>');
+    }
+    parts.push('<w:pgMar w:top="1077" w:right="1077" w:bottom="1247" w:left="1077" w:header="567" w:footer="567" w:gutter="0"/>');
+    if (spec.hasTitlePg){
+      parts.push('<w:titlePg/>');
+    }
+    return `<w:sectPr>${parts.join('')}</w:sectPr>`;
+  }
+
+  function finalizeSectionBlocksXml(blocks, sectPrXml, isLastSection){
+    const list = blocks.slice();
+    if (!isLastSection){
+      if (list.length > 0 && list[list.length - 1].kind === 'p'){
+        let lastP = list[list.length - 1].xml;
+        if (lastP.indexOf('</w:pPr>') >= 0){
+          lastP = lastP.replace('</w:pPr>', sectPrXml + '</w:pPr>');
+        } else {
+          lastP = lastP.replace('<w:p>', `<w:p><w:pPr>${sectPrXml}</w:pPr>`);
+        }
+        list[list.length - 1] = { kind:'p', xml: lastP };
+      } else {
+        list.push({
+          kind:'p',
+          xml: `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr>${sectPrXml}</w:pPr></w:p>`
+        });
+      }
+      return list.map(b => b.xml).join('');
+    }
+    // Final section: body must end with a paragraph before body-level <w:sectPr>
+    if (list.length === 0 || list[list.length - 1].kind !== 'p'){
+      list.push({ kind:'p', xml: docxTinySpacerParagraphXml(0) });
+    }
+    return list.map(b => b.xml).join('') + sectPrXml;
+  }
+
+  async function buildDocxFiles(){
+    const deck = buildDeckLayout();
+    const totalPages = deck.totalPages;
+    const docCode = docCodeEl.value.trim() || 'AD-EC-000';
+    const docTitle = docTitleEl.value.trim() || 'Untitled Deck';
+    const docSubtitle = docSubtitleEl.value.trim();
+    const tags = docTagsEl.value.trim();
+    const maturity = docMaturityEl.value.trim();
+
+    const docRels = [];
+    let relSeq = 1;
+    let drawingSeq = 1;
+    let headerSeq = 1;
+    let footerSeq = 1;
+    let numSeq = 2; // 1 is reserved for unordered bullet list
+    const orderedNums = [];
+    const hyperlinkRelMap = new Map();
+    const mediaExts = new Set();
+    const files = new Map(); // path -> string | Uint8Array
+    const contentOverrides = [];
+
+    function addDocRel(type, target, external){
+      const id = 'rId' + (relSeq++);
+      docRels.push({ id, type, target, external: !!external });
+      return id;
+    }
+
+    const pkg = {
+      nextDrawingId: () => drawingSeq++,
+      allocOrderedNumId: (start, ilvl) => {
+        const numId = numSeq++;
+        orderedNums.push({ numId, start: Math.max(1, start || 1), ilvl: Math.min(8, Math.max(0, ilvl || 0)) });
+        return numId;
+      },
+      addHyperlinkRel: (href) => {
+        if (hyperlinkRelMap.has(href)) return hyperlinkRelMap.get(href);
+        const rId = addDocRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', href, true);
+        hyperlinkRelMap.set(href, rId);
+        return rId;
+      },
+      addImagePart: (fileName, ext, bytes) => {
+        mediaExts.add(ext);
+        files.set('word/media/' + fileName, bytes);
+        return addDocRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/image', 'media/' + fileName, false);
+      }
+    };
+
+    // Base document relationships (styles, numbering, settings)
+    addDocRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles', 'styles.xml', false);
+    addDocRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering', 'numbering.xml', false);
+    addDocRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings', 'settings.xml', false);
+
+    // Embed ADPL logo PNG once for footers
+    const logoParsed = parseDataUrl(LOGO_DATA_URL);
+    const hasLogo = !!(logoParsed && logoParsed.bytes && logoParsed.bytes.length > 0);
+    if (hasLogo){
+      mediaExts.add('png');
+      files.set('word/media/adpl_logo.png', logoParsed.bytes);
+    }
+
+    // Shared empty header (prevents Word from inheriting previous section headers)
+    const emptyHeaderFile = `header${headerSeq++}.xml`;
+    files.set('word/' + emptyHeaderFile, buildDocxHeaderEmptyXml());
+    contentOverrides.push({
+      partName: '/word/' + emptyHeaderFile,
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml'
+    });
+    const emptyHeaderRId = addDocRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/header', emptyHeaderFile, false);
+
+    // Lazy per-orientation footer cache (portrait / landscape)
+    const footerRIds = {};
+    function getFooterRId(orientation){
+      const key = orientation === 'landscape' ? 'landscape' : 'portrait';
+      if (footerRIds[key]) return footerRIds[key];
+      const fName = `footer${footerSeq++}.xml`;
+      const logoRelId = hasLogo ? 'rId1' : '';
+      files.set('word/' + fName, buildDocxFooterXml(key, logoRelId, docCode, docTitle, totalPages, pkg.nextDrawingId()));
+      if (hasLogo){
+        files.set(`word/_rels/${fName}.rels`, docxRelsXml([{
+          id: 'rId1',
+          type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+          target: 'media/adpl_logo.png',
+          external: false
+        }]));
+      }
+      contentOverrides.push({
+        partName: '/word/' + fName,
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml'
+      });
+      footerRIds[key] = addDocRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer', fName, false);
+      return footerRIds[key];
+    }
+
+    function createContinuationHeader(orientation, eyebrow, title, stepText){
+      const hName = `header${headerSeq++}.xml`;
+      files.set('word/' + hName, buildDocxContinuationHeaderXml(orientation, eyebrow, title, stepText));
+      contentOverrides.push({
+        partName: '/word/' + hName,
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml'
+      });
+      return addDocRel('http://schemas.openxmlformats.org/officeDocument/2006/relationships/header', hName, false);
+    }
+
+    const sections = [];
+
+    // -------- Section 0: Cover Page --------
+    {
+      const orient = coverOrientation === 'landscape' ? 'landscape' : 'portrait';
+      const { w: PW } = pageSize(orient);
+      const bodyWTwips = mmToTwip(PW - MARGIN_X * 2);
+      const coverBoxH = orient === 'landscape' ? 8600 : 12200;
+      const coverBotMar = orient === 'landscape' ? 700 : 1200;
+
+      const coverPs = [];
+      coverPs.push(docxParagraphXml(
+        docxTextRunXml(docCode, { bold:true, sizePt:12, color: rgbHex(BLUE) }),
+        { align:'center', spacing:{ before:0, after:150, line:260, lineRule:'auto' } }
+      ));
+      coverPs.push(docxParagraphXml(
+        docxTextRunXml(docTitle, { bold:true, sizePt:24, color: rgbHex(INK) }),
+        { align:'center', spacing:{ before:0, after:150, line:288, lineRule:'auto' } }
+      ));
+      if (docSubtitle){
+        coverPs.push(docxParagraphXml(
+          docxTextRunXml(docSubtitle, { sizePt:13.5, color: rgbHex(MUTED) }),
+          { align:'center', spacing:{ before:0, after:260, line:280, lineRule:'auto' } }
+        ));
+      }
+      if (tags){
+        coverPs.push(docxParagraphXml(
+          docxTextRunXml(tags, { sizePt:9.5, color: rgbHex(MUTED) }),
+          { align:'center', spacing:{ before:140, after:90, line:260, lineRule:'auto' } }
+        ));
+      }
+      if (maturity){
+        coverPs.push(docxParagraphXml(
+          docxTextRunXml(maturity, { bold:true, sizePt:9.5, color: rgbHex(BLUE) }),
+          { align:'center', spacing:{ before:60, after:0, line:260, lineRule:'auto' } }
+        ));
+      }
+
+      const coverTbl =
+        `<w:tbl>` +
+          `<w:tblPr>` +
+            `<w:tblW w:w="${bodyWTwips}" w:type="dxa"/>` +
+            docxBordersXml('w:tblBorders', {}) +
+            `<w:tblLayout w:type="fixed"/>` +
+            docxCellMarXml('w:tblCellMar', { top:200, left:500, bottom:coverBotMar, right:500 }) +
+          `</w:tblPr>` +
+          `<w:tblGrid><w:gridCol w:w="${bodyWTwips}"/></w:tblGrid>` +
+          `<w:tr>` +
+            `<w:trPr><w:cantSplit/><w:trHeight w:val="${coverBoxH}" w:hRule="atLeast"/></w:trPr>` +
+            `<w:tc>` +
+              `<w:tcPr><w:tcW w:w="${bodyWTwips}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>` +
+              coverPs.join('') +
+            `</w:tc>` +
+          `</w:tr>` +
+        `</w:tbl>`;
+
+      sections.push({
+        blocks: [{ kind:'tbl', xml: coverTbl }],
+        sectPrSpec: {
+          orientation: orient,
+          nextPage: false,
+          hasTitlePg: false,
+          headerDefaultRId: emptyHeaderRId,
+          footerDefaultRId: getFooterRId(orient)
+        }
+      });
+    }
+
+    // -------- Content Sections (Screenshot & Text Pages) --------
+    let shotMediaSeq = 1;
+    for (let idx = 0; idx < pages.length; idx++){
+      const p = pages[idx];
+      const orient = p.orientation === 'landscape' ? 'landscape' : 'portrait';
+      const { w: PW, h: PH } = pageSize(orient);
+      const bodyWMm = PW - MARGIN_X * 2;
+      const bodyWTwips = mmToTwip(bodyWMm);
+      const stepText = stepLabelFor(p, idx);
+
+      if (p.type === 'screenshot'){
+        const blocks = buildDocxCardHeaderBlocks(p, stepText, bodyWTwips);
+
+        // Reserve exact vertical budget so screenshot + caption stay comfortably on 1 page
+        const docMeasure = getMeasureDoc();
+        const titleTrim = (p.title || '').trim();
+        const titleLines = titleTrim
+          ? splitDisplayLines(docMeasure, titleTrim, bodyWMm, 'helvetica', 'bold', 16.5, INK)
+          : [];
+        const estHeaderMm = 12 + titleLines.length * 7.5 + 8;
+
+        const captionTrim = (p.caption || '').trim();
+        let estCaptionLines = 0;
+        if (captionTrim){
+          captionTrim.split(/\r\n?|\n/).forEach(ln=>{
+            estCaptionLines += Math.max(1, splitDisplayLines(docMeasure, ln, bodyWMm, 'helvetica', 'normal', 9.5, MUTED).length);
+          });
+        }
+        const estCaptionMm = estCaptionLines > 0 ? (estCaptionLines * 5.0 + 10) : 4;
+        const printableHMm = PH - 41; // 19mm top + 22mm bottom margin
+        const availBoxWMm = bodyWMm - 8;
+        const availBoxHMm = Math.max(45, printableHMm - estHeaderMm - estCaptionMm - 14);
+
+        const imgNorm = p.imgData ? await normalizeImageForDocx(p.imgData) : null;
+        if (imgNorm && imgNorm.bytes && imgNorm.bytes.length > 0){
+          const natW = p.imgW || imgNorm.w || 1200;
+          const natH = p.imgH || imgNorm.h || 800;
+          const scale = Math.min(availBoxWMm / natW, availBoxHMm / natH);
+          const drawWMm = Math.max(10, natW * scale);
+          const drawHMm = Math.max(10, natH * scale);
+
+          const mediaFile = `screenshot_${shotMediaSeq++}.${imgNorm.ext}`;
+          const imgRId = pkg.addImagePart(mediaFile, imgNorm.ext, imgNorm.bytes);
+          const imgDrawId = pkg.nextDrawingId();
+          const imgRun = `<w:r>${docxInlineImageXml(imgRId, mmToEmu(drawWMm), mmToEmu(drawHMm), p.imgName || mediaFile, p.title || 'Screenshot', imgDrawId)}</w:r>`;
+          const imgP = docxParagraphXml(imgRun, {
+            align:'center',
+            spacing:{ before:0, after:0, line:240, lineRule:'auto' }
+          });
+
+          const frameBdr = { val:'single', sz:6, color: rgbHex(BOX_BORDER) };
+          const frameTbl =
+            `<w:tbl>` +
+              `<w:tblPr>` +
+                `<w:tblW w:w="${bodyWTwips}" w:type="dxa"/>` +
+                docxBordersXml('w:tblBorders', { top:frameBdr, left:frameBdr, bottom:frameBdr, right:frameBdr }) +
+                `<w:tblLayout w:type="fixed"/>` +
+                docxCellMarXml('w:tblCellMar', { top:160, left:160, bottom:160, right:160 }) +
+              `</w:tblPr>` +
+              `<w:tblGrid><w:gridCol w:w="${bodyWTwips}"/></w:tblGrid>` +
+              `<w:tr>` +
+                `<w:trPr><w:cantSplit/></w:trPr>` +
+                `<w:tc>` +
+                  `<w:tcPr><w:tcW w:w="${bodyWTwips}" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="FFFFFF"/><w:vAlign w:val="center"/></w:tcPr>` +
+                  imgP +
+                `</w:tc>` +
+              `</w:tr>` +
+            `</w:tbl>`;
+          pushDocxBlock(blocks, { kind:'tbl', xml: frameTbl });
+        } else {
+          const emptyH = mmToTwip(Math.min(availBoxHMm, 115));
+          const dashBdr = { val:'dashed', sz:6, color: rgbHex(BOX_BORDER) };
+          const emptyP = docxParagraphXml(
+            docxTextRunXml('No screenshot uploaded', { bold:true, sizePt:10, color:'B7BFC8' }),
+            { align:'center', spacing:{ before:0, after:0, line:240, lineRule:'auto' } }
+          );
+          const emptyTbl =
+            `<w:tbl>` +
+              `<w:tblPr>` +
+                `<w:tblW w:w="${bodyWTwips}" w:type="dxa"/>` +
+                docxBordersXml('w:tblBorders', { top:dashBdr, left:dashBdr, bottom:dashBdr, right:dashBdr }) +
+                `<w:tblLayout w:type="fixed"/>` +
+                docxCellMarXml('w:tblCellMar', { top:160, left:160, bottom:160, right:160 }) +
+              `</w:tblPr>` +
+              `<w:tblGrid><w:gridCol w:w="${bodyWTwips}"/></w:tblGrid>` +
+              `<w:tr>` +
+                `<w:trPr><w:cantSplit/><w:trHeight w:val="${emptyH}" w:hRule="atLeast"/></w:trPr>` +
+                `<w:tc>` +
+                  `<w:tcPr><w:tcW w:w="${bodyWTwips}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>` +
+                  emptyP +
+                `</w:tc>` +
+              `</w:tr>` +
+            `</w:tbl>`;
+          pushDocxBlock(blocks, { kind:'tbl', xml: emptyTbl });
+        }
+
+        if (captionTrim){
+          pushDocxBlock(blocks, {
+            kind:'p',
+            xml: docxParagraphXml(
+              docxTextRunXml(captionTrim, { sizePt:9.5, color: rgbHex(MUTED) }),
+              { spacing:{ before:150, after:0, line:312, lineRule:'auto' } }
+            )
+          });
+        }
+
+        sections.push({
+          blocks,
+          sectPrSpec: {
+            orientation: orient,
+            nextPage: true,
+            hasTitlePg: false,
+            headerDefaultRId: emptyHeaderRId,
+            footerDefaultRId: getFooterRId(orient)
+          }
+        });
+        continue;
+      }
+
+      // ---- Text Page (Markdown AST -> native flowing WordprocessingML with continuation header) ----
+      const blocks = buildDocxCardHeaderBlocks(p, stepText, bodyWTwips);
+      const ast = parseMarkdownAST(p.body || '');
+      // Trim accidental trailing pagebreaks so no empty trailing page is emitted
+      while (ast.length > 0 && ast[ast.length - 1] && (ast[ast.length - 1].type === 'pagebreak' || ast[ast.length - 1].type === 'space')){
+        ast.pop();
+      }
+      const mdBlocks = renderMarkdownAstToDocxBlocks(ast, {
+        listDepth: 0,
+        inQuote: false,
+        tightList: false,
+        indentLeftTwips: 0,
+        availWTwips: bodyWTwips,
+        hasContent: false
+      }, pkg);
+      mdBlocks.forEach(mb => pushDocxBlock(blocks, mb));
+
+      const hasContHeader = !!((p.eyebrow && p.eyebrow.trim()) || (p.title && p.title.trim()) || (stepText && stepText.trim()));
+      const fRId = getFooterRId(orient);
+      if (hasContHeader){
+        const contHeaderRId = createContinuationHeader(orient, p.eyebrow, p.title, stepText);
+        sections.push({
+          blocks,
+          sectPrSpec: {
+            orientation: orient,
+            nextPage: true,
+            hasTitlePg: true,
+            headerFirstRId: emptyHeaderRId,
+            headerDefaultRId: contHeaderRId,
+            footerFirstRId: fRId,
+            footerDefaultRId: fRId
+          }
+        });
+      } else {
+        sections.push({
+          blocks,
+          sectPrSpec: {
+            orientation: orient,
+            nextPage: true,
+            hasTitlePg: false,
+            headerDefaultRId: emptyHeaderRId,
+            footerDefaultRId: fRId
+          }
+        });
+      }
+    }
+
+    // Assemble word/document.xml
+    const bodyXmlParts = sections.map((sec, sIdx)=>{
+      const isLast = sIdx === sections.length - 1;
+      const sectPrXml = buildSectPrXml(sec.sectPrSpec);
+      return finalizeSectionBlocksXml(sec.blocks, sectPrXml, isLast);
+    });
+
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
+                  `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ` +
+                  `xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" ` +
+                  `xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ` +
+                  `xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+        `<w:body>${bodyXmlParts.join('')}</w:body>` +
+      `</w:document>`;
+
+    files.set('word/document.xml', documentXml);
+    files.set('word/_rels/document.xml.rels', docxRelsXml(docRels));
+    files.set('word/styles.xml', buildDocxStylesXml());
+    files.set('word/numbering.xml', buildDocxNumberingXml(orderedNums));
+    files.set('word/settings.xml', buildDocxSettingsXml());
+
+    // Package metadata
+    const isoNow = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const coreXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ` +
+                         `xmlns:dc="http://purl.org/dc/elements/1.1/" ` +
+                         `xmlns:dcterms="http://purl.org/dc/terms/" ` +
+                         `xmlns:dcmitype="http://purl.org/dc/dcmitype/" ` +
+                         `xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
+        `<dc:title>${xmlEsc(docTitle)}</dc:title>` +
+        `<dc:subject>${xmlEsc(docCode)}</dc:subject>` +
+        `<dc:creator>ADPL Deck Builder</dc:creator>` +
+        `<dcterms:created xsi:type="dcterms:W3CDTF">${isoNow}</dcterms:created>` +
+        `<dcterms:modified xsi:type="dcterms:W3CDTF">${isoNow}</dcterms:modified>` +
+      `</cp:coreProperties>`;
+    const appXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">` +
+        `<Application>ADPL Deck Builder</Application>` +
+        `<Pages>${totalPages}</Pages>` +
+      `</Properties>`;
+    files.set('docProps/core.xml', coreXml);
+    files.set('docProps/app.xml', appXml);
+
+    // Root package relationships
+    files.set('_rels/.rels', docxRelsXml([
+      { id:'rId1', type:'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument', target:'word/document.xml', external:false },
+      { id:'rId2', type:'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties', target:'docProps/core.xml', external:false },
+      { id:'rId3', type:'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties', target:'docProps/app.xml', external:false }
+    ]));
+
+    // [Content_Types].xml
+    const defaultTypes = [
+      `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>`,
+      `<Default Extension="xml" ContentType="application/xml"/>`
+    ];
+    if (mediaExts.has('png')) defaultTypes.push(`<Default Extension="png" ContentType="image/png"/>`);
+    if (mediaExts.has('jpeg')) defaultTypes.push(`<Default Extension="jpeg" ContentType="image/jpeg"/>`);
+
+    const allOverrides = [
+      { partName:'/word/document.xml', contentType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml' },
+      { partName:'/word/styles.xml', contentType:'application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml' },
+      { partName:'/word/numbering.xml', contentType:'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml' },
+      { partName:'/word/settings.xml', contentType:'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml' },
+      { partName:'/docProps/core.xml', contentType:'application/vnd.openxmlformats-package.core-properties+xml' },
+      { partName:'/docProps/app.xml', contentType:'application/vnd.openxmlformats-officedocument.extended-properties+xml' },
+      ...contentOverrides
+    ];
+    const overrideXml = allOverrides.map(o =>
+      `<Override PartName="${xmlEsc(o.partName)}" ContentType="${xmlEsc(o.contentType)}"/>`
+    ).join('');
+    files.set('[Content_Types].xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">${defaultTypes.join('')}${overrideXml}</Types>`
+    );
+
+    const filename = (docCode || 'deck').replace(/[^a-z0-9\-]+/gi, '_') + '.docx';
+    return { files, filename, deck, docCode };
+  }
+
+  async function buildDocxBytes(){
+    const { files, filename, deck, docCode } = await buildDocxFiles();
+    const entries = [];
+    files.forEach((val, name)=>{
+      const isMedia = name.startsWith('word/media/');
+      entries.push({
+        name,
+        data: ArrayBuffer.isView(val)
+          ? new Uint8Array(val.buffer, val.byteOffset, val.byteLength)
+          : utf8Bytes(val),
+        compress: !isMedia
+      });
+    });
+    const bytes = await buildZipUint8Array(entries);
+    return { bytes, filename, deck, docCode };
+  }
+
+  async function buildDocxBlob(){
+    const { bytes, filename, deck, docCode } = await buildDocxBytes();
+    const blob = new Blob([bytes], { type: DOCX_MIME });
+    return { blob, bytes, filename, deck, docCode };
+  }
+
+  async function generateDocx(){
+    const btn = $('generateDocxBtn');
+    const origLabel = btn ? btn.textContent : '';
+    if (btn){
+      btn.disabled = true;
+      btn.textContent = 'Generating DOCX…';
+    }
+    try{
+      const { blob, filename } = await buildDocxBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=> URL.revokeObjectURL(url), 1000);
+    }catch(err){
+      console.error('DOCX export failed:', err);
+      alert('Failed to generate DOCX: ' + (err && err.message ? err.message : String(err)));
+    }finally{
+      if (btn){
+        btn.disabled = false;
+        btn.textContent = origLabel;
+      }
+    }
+  }
+
+  const generateDocxBtn = $('generateDocxBtn');
+  if (generateDocxBtn) generateDocxBtn.addEventListener('click', generateDocx);
+
   // Expose helper API for diagnostics/testing
   window.ADPLDeck = {
     getPages: () => pages,
     setPages: (next) => { pages = next; renderForm(); renderPreview(); },
     buildDeckLayout,
     buildPdfDocument,
+    buildDocxFiles,
+    buildDocxBytes,
+    buildDocxBlob,
+    generateDocx,
     renderForm,
     renderPreview
   };
