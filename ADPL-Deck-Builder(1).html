@@ -2348,7 +2348,9 @@
     sheets.forEach((sh, i)=>{
       sh.partCount = partCount;
       if (i > 0){
-        sh.step = baseStep ? `${baseStep} · Cont. (${i+1}/${partCount})` : `Cont. (${i+1}/${partCount})`;
+        // sh.step = baseStep ? `${baseStep} · Cont. (${i+1}/${partCount})` : `Cont. (${i+1}/${partCount})`;
+        sh.step = baseStep;
+
       } else {
         sh.step = baseStep;
       }
@@ -2584,7 +2586,7 @@
 
       // Text page (1 or more auto-paginated sheets)
       const partTag = sh.partCount > 1 ? ` (Part ${sh.partIdx + 1} of ${sh.partCount})` : '';
-      wrap.innerHTML = `<div class="sheet-label">Text page${partTag} — ${sh.orientation} — Page ${sh.pageNum} of ${total}</div>`;
+      // wrap.innerHTML = `<div class="sheet-label">Text page${partTag} — ${sh.orientation} — Page ${sh.pageNum} of ${total}</div>`;
       const s = document.createElement('div');
       s.className = 'sheet content text-sheet' +
         (sh.orientation === 'landscape' ? ' landscape' : '') +
